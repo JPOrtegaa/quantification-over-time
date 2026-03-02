@@ -49,7 +49,7 @@ def nepali_dataset_eng():
 
 
 def global_covid19_tweets():
-    training_set = r'../time series qua/global_covid19_tweet/global_covid19_tweets/Corona_NLP_train.csv'
+    training_set = r'../time series qua/global_covid19_tweets/global_covid19_tweets/Corona_NLP_train.csv'
     test_set = r'../time series qua/global_covid19_tweets/global_covid19_tweets/Corona_NLP_test.csv'
     df = pd.read_csv(training_set)
     df_test = pd.read_csv(test_set)
