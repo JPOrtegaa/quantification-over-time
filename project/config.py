@@ -22,6 +22,8 @@ def ensure_dirs():
     for d in [OUTPUT_DIR, QUANT_RESULTS_DIR, PLOTS_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
+ensure_dirs()
+
 if __name__ == "__main__":
     print(f"Project Root: {PROJECT_ROOT}")
     print(f"Data Dir: {DATA_DIR}")

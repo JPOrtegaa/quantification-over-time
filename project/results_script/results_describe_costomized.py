@@ -23,10 +23,14 @@ seeds = [1,
 # TSF = ['QFY', 'MA', 'WAUA', 'KFUA', 'GPR', 'KFGPR']
 TSF = ['QFY', 'MA', 'WA-LR-LI', 'KF-Ens', 'KF-MA']
 
+# Ensure subdirectories exist
+pakdd_dir = config.OUTPUT_DIR / 'PAKDD'
+pakdd_dir.mkdir(parents=True, exist_ok=True)
+
 # tot = np.zeros(72*6).reshape(72, 6)
 tot = np.zeros(3*3*3*5).reshape(3*3*3, 5)
 for seed in seeds:
-    results_path = config.OUTPUT_DIR / 'PAKDD' / f'MAE results seed {seed} (has kf ens).csv'
+    results_path = pakdd_dir / f'MAE results seed {seed} (has kf ens).csv'
     res = pd.read_csv(results_path)
     res = res.to_numpy()[:, 3:9]
     tot = tot + res
