@@ -53,7 +53,7 @@ for i in range(len(TSF_results)):
 # for m in best_m:
 #     win_counts[m][0] = win_counts[m][0] + 1
 # df_win_counts = pd.DataFrame(win_counts)
-# df_win_counts.to_csv('../Output_Files/win_counts.csv')
+# df_win_counts.to_csv(config.OUTPUT_DIR / 'win_counts.csv')
 #
 # pairs = []
 # for m_i in range(len(TSF)-1, -1, -1):
@@ -75,7 +75,7 @@ for i in range(len(TSF_results)):
 #                           'method 2': pairs[:, 1],
 #                           'method 1 wins': pairs[:, 2],
 #                           'method 2 wins': pairs[:, 3]})
-# pair_wins.to_csv('../Output_Files/pair_wins.csv')
+# pair_wins.to_csv(config.OUTPUT_DIR / 'pair_wins.csv')
 
 tot_res['best_method'] = np.array(best_m)
 tot_res = tot_res.drop(labels=['Unnamed: 0'], axis=1)
