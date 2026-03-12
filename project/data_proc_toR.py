@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import data_loading
 from utils import val_test_split
+import config
 
 
 def proc(val, data, name):
@@ -13,17 +14,16 @@ def proc(val, data, name):
         comb = pd.concat([val, data[i]], axis=0)
         comb = comb.rename(columns={'label': 'TRUTH', 'text': 'TEXT'})
 
-        valsets_folder = rf'.\ReadMe_Implement\data\{name[0]}\val'
-        testsets_folder = rf'.\ReadMe_Implement\data\{name[0]}\test'
-        if not os.path.exists(valsets_folder):
-            os.makedirs(valsets_folder)
-        if not os.path.exists(testsets_folder):
-            os.makedirs(testsets_folder)
+        valsets_folder = config.README_IMPLEMENT_DIR / 'data' / name[0] / 'val'
+        testsets_folder = config.README_IMPLEMENT_DIR / 'data' / name[0] / 'test'
+        
+        valsets_folder.mkdir(parents=True, exist_ok=True)
+        testsets_folder.mkdir(parents=True, exist_ok=True)
 
         if i < n_valsubsamples:
-            comb.to_csv(rf'{valsets_folder}\{i}.csv', index=False)
+            comb.to_csv(valsets_folder / f'{i}.csv', index=False)
         else:
-            comb.to_csv(rf'{testsets_folder}\{i-n_valsubsamples}.csv', index=False)
+            comb.to_csv(testsets_folder / f'{i-n_valsubsamples}.csv', index=False)
     return
 
 
