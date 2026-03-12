@@ -5,6 +5,7 @@ from classification import Classifying
 import pandas as pd
 from utils import mse, mae
 import os
+import config
 
 
 def ACC_on_TSsets(val_set, test_set_dict, senti_model, classes):
@@ -164,7 +165,8 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, random_seed):
     elif qua == 'CC':
         qtfd_dsts = CC_on_TSsets(subsamples_dict, mod, c)
     elif qua == 'ReadMe2':
-        qtfd_dsts = np.array(pd.read_csv(f'./ReadMe_Implement/data/{name[0]}/seed{random_seed}/val_preds.csv'))
+        val_preds_path = config.README_IMPLEMENT_DIR / 'data' / name[0] / f'seed{random_seed}' / 'val_preds.csv'
+        qtfd_dsts = np.array(pd.read_csv(val_preds_path))
 
     sep_MAE = abs(subsamples_prevs - qtfd_dsts).sum(axis=0) / len(subsamples_dsts)
     val_MAE = mae(subsamples_prevs, qtfd_dsts)
@@ -175,8 +177,8 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, random_seed):
 def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
 
     try:
-        quantified_dsts = pd.read_csv(
-            rf'.\quant_results\_{dataname[0]}\{qua}-{str(mod)[:6]}-{dataname[0]}-{dataname[1]}.csv').drop(
+        results_file = config.QUANT_RESULTS_DIR / f'_{dataname[0]}' / f'{qua}-{str(mod)[:6]}-{dataname[0]}-{dataname[1]}.csv'
+        quantified_dsts = pd.read_csv(results_file).drop(
             labels=['Unnamed: 0'], axis=1).to_numpy()
         quantified_dsts = np.nan_to_num(quantified_dsts, nan=1 / len(c))
 
@@ -193,7 +195,8 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
         elif qua == 'CC':
             quantified_dsts = CC_on_TSsets(data_dict, mod, c)
         elif qua == 'ReadMe2':
-            df_quantified_dsts = pd.read_csv(f'./ReadMe_Implement/data/{dataname[0]}/seed{random_seed}/test_preds.csv')
+            test_preds_path = config.README_IMPLEMENT_DIR / 'data' / dataname[0] / f'seed{random_seed}' / 'test_preds.csv'
+            df_quantified_dsts = pd.read_csv(test_preds_path)
             quantified_dsts = np.array(df_quantified_dsts)
 
         quantified_dsts = np.nan_to_num(quantified_dsts, nan=1 / len(c))
@@ -202,10 +205,10 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
         for i, cls in enumerate(c):
             pd_quantified_dsts[cls] = quantified_dsts[:, i]
         pd_quantified_dsts = pd.DataFrame(quantified_dsts)
-        dataset_folder = rf'.\quant_results\_{dataname[0]}'
-        if not os.path.exists(dataset_folder):
-            os.makedirs(dataset_folder)
+        dataset_folder = config.QUANT_RESULTS_DIR / f'_{dataname[0]}'
+        if not dataset_folder.exists():
+            dataset_folder.mkdir(parents=True, exist_ok=True)
 
-        pd_quantified_dsts.to_csv(dataset_folder+rf'\{qua}-{str(mod)[:6]}-{dataname[0]}.csv')
+        pd_quantified_dsts.to_csv(dataset_folder / f'{qua}-{str(mod)[:6]}-{dataname[0]}.csv')
 
     return quantified_dsts

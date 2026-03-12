@@ -1,6 +1,12 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
+import sys
+from pathlib import Path
+
+# Ensure config can be imported
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+import config
 
 def plots(true_dsts, quantified_dsts, modified_dsts, dataset, head, condition, c, qua, tsa, show=True):
     fig, _ = plt.subplots(len(c), 1, figsize=(10, 6))
@@ -42,10 +48,12 @@ def plots(true_dsts, quantified_dsts, modified_dsts, dataset, head, condition, c
 
     # plt.subplots_adjust(left=0.07, right=0.975, top=0.96, bottom=0.1)  # adjust the blank
 
-    if not os.path.exists(rf'.\plots\_{dataset}'):
-        os.makedirs(rf'.\plots\_{dataset}')
+    dataset_plots_dir = config.PLOTS_DIR / f'_{dataset}'
+    if not dataset_plots_dir.exists():
+        dataset_plots_dir.mkdir(parents=True, exist_ok=True)
 
-    plt.savefig(rf'.\plots\_{dataset}\{head[16:-15]}-{condition}.png', dpi=150)
+    filename = f'{head[16:-15]}-{condition}.png'
+    plt.savefig(dataset_plots_dir / filename, dpi=150)
     # plt.savefig(rf'.\plots\_{dataset}\{head[16:-15]}-{condition}.eps', format='eps')
 
     if show:

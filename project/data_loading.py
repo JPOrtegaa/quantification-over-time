@@ -5,6 +5,7 @@ from io import BytesIO
 from zipfile import ZipFile
 import urllib.request
 from utils import val_test_split
+import config
 
 
 def count_median(datadict):
@@ -16,7 +17,7 @@ def count_median(datadict):
 
 
 def nepali_dataset_eng():
-    df1 = pd.read_csv(r'../time series qua/Nepali_dataset_Eng.csv')
+    df1 = pd.read_csv(config.DATA_DIR / 'Nepali_dataset_Eng.csv')
     df1 = df1.drop(labels=['Unnamed: 0', 'Tweet', 'Tokanize_tweet'], axis=1)
     neworder = ['Label', 'Tweet_en', 'Datetime']
     df1 = df1.reindex(columns=neworder)
@@ -49,8 +50,8 @@ def nepali_dataset_eng():
 
 
 def global_covid19_tweets():
-    training_set = r'../time series qua/global_covid19_tweets/global_covid19_tweets/Corona_NLP_train.csv'
-    test_set = r'../time series qua/global_covid19_tweets/global_covid19_tweets/Corona_NLP_test.csv'
+    training_set = config.DATA_DIR / 'global_covid19_tweets' / 'global_covid19_tweets' / 'Corona_NLP_train.csv'
+    test_set = config.DATA_DIR / 'global_covid19_tweets' / 'global_covid19_tweets' / 'Corona_NLP_test.csv'
     df = pd.read_csv(training_set)
     df_test = pd.read_csv(test_set)
     df1 = pd.concat([df_test, df])
@@ -94,9 +95,10 @@ def global_covid19_tweets():
 
 
 def Apple_Twitter_Sentiment_DFE():
-    with open(r'../time series qua/Apple-Twitter-Sentiment-DFE.csv', 'rb') as f:
+    data_path = config.DATA_DIR / 'Apple-Twitter-Sentiment-DFE.csv'
+    with open(data_path, 'rb') as f:
         enc = chardet.detect(f.read())
-    df = pd.read_csv(r'../time series qua/Apple-Twitter-Sentiment-DFE.csv', encoding=enc['encoding'])
+    df = pd.read_csv(data_path, encoding=enc['encoding'])
     df1 = df.drop(labels=['_unit_id',
                           '_golden',
                           '_unit_state',
@@ -167,7 +169,7 @@ def bike():
     # my_zip_file = ZipFile(BytesIO(url.read()))
     # print(my_zip_file.namelist())
     # f = my_zip_file.namelist()[2]
-    f = r'../time series qua/bike_sharing_dataset/hour.csv'
+    f = config.DATA_DIR / 'bike_sharing_dataset' / 'hour.csv'
     dta = pd.read_csv(f, header=0, skipinitialspace=True)
     dta = dta.drop(["instant", "casual", "registered"], axis=1)
     dta = pd.get_dummies(dta, columns=["season", "yr", "mnth", "hr", "weekday", "weathersit"])
