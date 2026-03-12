@@ -9,17 +9,27 @@ from utils import params_KFMA
 import argparse
 
 
-seeds = [1, 2,
-         3, 4, 5, 6, 7, 8, 9, 10
-         ]
-text_senti_data = [('global_covid19_tweets', 15), ('nepali_dataset_eng', 15), ('Apple-Twitter-Sentiment-DFE', 15)]
-tubular_data = [('bike', 55),
-                ('energy', 20), ('news', 36)
-                ]
-classifiers_set1 = ['LR', 'RF']
-classifiers_set2 = ['vader', 'amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061']
-qua_methods = ['DyS', 'ACC', 'GPAC', 'EDy']
-TSA_methods = ['QFY', 'MA', 'KFMA']
+# seeds = [1, 2,
+#          3, 4, 5, 6, 7, 8, 9, 10
+#          ]
+seeds = [1, 2, 3]
+# text_senti_data = [('global_covid19_tweets', 15), ('nepali_dataset_eng', 15), ('Apple-Twitter-Sentiment-DFE', 15)]
+text_senti_data = [('Apple-Twitter-Sentiment-DFE', 15)]
+# tubular_data = [('bike', 55),
+                # ('energy', 20), ('news', 36)
+                # ]
+tubular_data = [('bike', 55)]
+
+# classifiers_set1 = ['LR', 'RF']
+# classifiers_set2 = ['vader', 'amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061']
+# qua_methods = ['DyS', 'ACC', 'GPAC', 'EDy']
+# TSA_methods = ['QFY', 'MA', 'KFMA']
+# unified_window = 4
+
+classifiers_set1 = ['RF']
+classifiers_set2 = ['amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061']
+qua_methods = ['DyS']
+TSA_methods = ['MA', 'KFMA']
 unified_window = 4
 
 

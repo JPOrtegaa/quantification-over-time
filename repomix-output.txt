@@ -1,0 +1,4161 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: **/*.csv, **/*.log, tmp/
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+project/
+  classification/
+    cardiffnlp.py
+    Classifying.py
+    HuggingFaceModel.py
+    trainingModel.py
+  quant_results/
+    _Apple-Twitter-Sentiment-DFE/
+      .~lock.ReadMe2-None-Apple-Twitter-Sentiment-DFE-15.csv#
+  ReadMe_Implement/
+    .Rproj.user/
+      3BFB29B7/
+        pcs/
+          files-pane.pper
+          source-pane.pper
+          windowlayoutstate.pper
+          workbench-pane.pper
+        sources/
+          per/
+            t/
+              2F91D236
+              2F91D236-contents
+              4C5FB8DC
+              4C5FB8DC-contents
+              9CC52215
+              9CC52215-contents
+              F57144F3
+              F57144F3-contents
+          prop/
+            1BFA391F
+            2B2C2CC6
+            49BE738F
+            6FBB5D12
+            81113864
+            88498E2F
+            B1B3E35D
+            B3EC573F
+            B5AF8BDA
+            B7B5FFE2
+            BA8E41E8
+            BE3A56B0
+            FC9BA2F7
+            INDEX
+        rmd-outputs
+        saved_source_markers
+      A0BEBBF1/
+        pcs/
+          debug-breakpoints.pper
+          files-pane.pper
+          packages-pane.pper
+          source-pane.pper
+          windowlayoutstate.pper
+          workbench-pane.pper
+        sources/
+          prop/
+            0B12BCA7
+            0E221264
+            0EC711D9
+            1AE45E9E
+            37523213
+            3F1ADE24
+            710CB610
+            7ACA5A90
+            C3C412A2
+            CFDC5C89
+            E351D732
+            E388C612
+            INDEX
+          session-982480c8/
+            11E333AD
+            11E333AD-contents
+            35A9721E
+            35A9721E-contents
+            560F9C70
+            560F9C70-contents
+            73727E11
+            73727E11-contents
+            75173B50
+            75173B50-contents
+            DD3DFC40-contents
+            E69B9A56
+            E69B9A56-contents
+            FA431460
+            FA431460-contents
+            lock_file
+        persistent-state
+        rmd-outputs
+        saved_source_markers
+      shared/
+        notebooks/
+          patch-chunk-names
+          paths
+    .RData
+    .Rhistory
+    readCSV.R
+    ReadMe_Implement.Rproj
+    readme2_csv.R
+    ReadMe2.R
+  results_script/
+    ploting.py
+    results_describe_costomized.py
+    results_describe.py
+  data_loading.py
+  data_proc_toR.py
+  quantifications.py
+  quantifiers.py
+  run_experiment.py
+  time_series_adjustment.py
+  utils.py
+time series qua/
+  bike_sharing_dataset/
+    Readme.txt
+.gitignore
+README.md
+requirements.txt
+requirements.yaml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="project/classification/cardiffnlp.py">
+from transformers import AutoModelForSequenceClassification
+from transformers import TFAutoModelForSequenceClassification
+from transformers import AutoTokenizer, AutoConfig
+import numpy as np
+from scipy.special import softmax
+# Preprocess text (username and link placeholders)
+def preprocess(text):
+    new_text = []
+    for t in text.split(" "):
+        t = '@user' if t.startswith('@') and len(t) > 1 else t
+        t = 'http' if t.startswith('http') else t
+        new_text.append(t)
+    return " ".join(new_text)
+
+
+MODEL = f"cardiffnlp/twitter-roberta-base-sentiment-latest"
+tokenizer = AutoTokenizer.from_pretrained(MODEL)
+config = AutoConfig.from_pretrained(MODEL)
+# PT
+model = AutoModelForSequenceClassification.from_pretrained(MODEL)
+
+def twitter_roberta_base_sentiment_latest(text):
+    #model.save_pretrained(MODEL)
+    text = preprocess(text)
+    encoded_input = tokenizer(text, return_tensors='pt')
+    output = model(**encoded_input)
+    scores = output[0][0].detach().numpy()
+    scores = softmax(scores)
+    # # TF
+    # model = TFAutoModelForSequenceClassification.from_pretrained(MODEL)
+    # model.save_pretrained(MODEL)
+    # text = "Covid cases are increasing fast!"
+    # encoded_input = tokenizer(text, return_tensors='tf')
+    # output = model(encoded_input)
+    # scores = output[0][0].numpy()
+    # scores = softmax(scores)
+    # Print labels and scores
+
+    # ranking = np.argsort(scores)
+    # ranking = ranking[::-1]
+    # label = config.id2label[ranking[0]]
+    # score = scores[ranking[0]]
+    return scores
+    # for i in range(scores.shape[0]):
+    #     l = config.id2label[ranking[i]]
+    #     s = scores[ranking[i]]
+    #     print(l)
+    #     print(s)
+</file>
+
+<file path="project/classification/Classifying.py">
+import numpy as np
+import pandas as pd
+from transformers import pipeline
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from . import HuggingFaceModel
+from sklearn.metrics import confusion_matrix, accuracy_score, f1_score
+
+
+# Preprocess text (username and link placeholders)
+def analyzer(df_text, mod, classes):
+    '''
+    :param df_text: a dataset with true labels
+    :param mod: name(string) of a sentiment classifier or a trained classifier class
+    :param classes: the name(string) of classes
+    :return: [pred_labels, pred_scores, [acc, f1]]
+    '''
+
+    # PART 1: text classification for twiiter datasets
+    if type(mod) == str:
+        df_x = df_text['text'].to_list()
+        df_y = df_text['label'].reset_index(drop=True).astype(int)
+        pred_labels = []
+        pred_scores = []
+
+        if len(classes) == 2:
+            pred_labels = []
+            pred_scores = []
+            if mod == 'vader':
+                classifier = SentimentIntensityAnalyzer()
+
+                for x in df_x:
+                    res_x = classifier.polarity_scores(str(x))
+                    if res_x['pos'] > res_x['neg']:
+                        pred_labels.append(1)
+                    elif res_x['pos'] <= res_x['neg']:
+                        pred_labels.append(-1)
+                    s = res_x['neg'] + res_x['pos'] + 2 * 1e-5
+                    pred_scores.append([(res_x['neg'] + 1e-5) / s, (res_x['pos'] + 1e-5) / s])
+
+            else:
+                model = HuggingFaceModel.SentiAnalyzer(mod)
+                for x in df_x:
+                    scores, label = model.analyze(str(x))
+                    if scores[2] >= scores[0]:
+                        pred_labels.append(1)
+                    elif scores[2] < scores[0]:
+                        pred_labels.append(-1)
+                    s = scores[0] + scores[2]
+                    pred_scores.append([scores[0] / s, scores[2] / s])
+
+            pred_labels = pd.Series(pred_labels).astype(int)
+            pred_scores = np.array(pred_scores)
+            acc = (pred_labels == df_y).sum() / len(df_y)
+            f1 = f1_score(df_y, pred_labels, average='macro')
+
+            pred_labels = pd.DataFrame({'pred_y': pred_labels,
+                                        'true_y': df_y})
+
+            pred_scores = pd.DataFrame({-1: pred_scores[:, 0],
+                                        1: pred_scores[:, 1],
+                                        'true_y': df_y})
+
+        else:
+            if mod == 'vader':
+                classifier = SentimentIntensityAnalyzer()
+
+                for x in df_x:
+                    res_x = classifier.polarity_scores(str(x))
+                    if res_x['compound'] > 0.0:
+                        pred_labels.append(1)
+                    elif res_x['compound'] < 0.0:
+                        pred_labels.append(-1)
+                    else:
+                        pred_labels.append(0)
+                    pred_scores.append([res_x['neg'], res_x['neu'], res_x['pos']])
+
+            else:
+                model = HuggingFaceModel.SentiAnalyzer(mod)
+                for x in df_x:
+                    scores, label = model.analyze(str(x))
+                    if label == 'negative' or label == 'Negative' or label == 'LABEL_0':
+                        pred_labels.append(-1)
+                    elif label == 'positive' or label == 'Positive' or label == 'LABEL_2':
+                        pred_labels.append(1)
+                    elif label == 'neutral' or label == 'Negative' or label == 'LABEL_1':
+                        pred_labels.append(0)
+                    pred_scores.append(scores)
+
+            pred_labels = pd.Series(pred_labels).astype(int)
+            pred_scores = np.array(pred_scores)
+            acc = (pred_labels == df_y).sum() / len(df_y)
+            acc_rate = ((pred_labels == df_y).sum() + 1e-4) / ((pred_labels != df_y).sum() + 1e-4)
+            f1 = f1_score(df_y, pred_labels, average='macro')
+
+            pred_labels = pd.DataFrame({'pred_y': pred_labels,
+                                        'true_y': df_y})
+
+            pred_scores = pd.DataFrame({-1: pred_scores[:, 0],
+                                        0: pred_scores[:, 1],
+                                        1: pred_scores[:, 2],
+                                        'true_y': df_y})
+
+        return [pred_labels, pred_scores, [acc, f1]]
+
+
+    # PART 2: numeral classification for mosquito datasets
+    else:
+        df_x = df_text.loc[:, ~df_text.columns.isin(['label'])]
+        df_y = df_text['label']
+
+        pred_labels = mod.predict(df_x)
+        pred_scores = mod.predict_proba(df_x)
+
+        acc_rate = ((pred_labels == df_y).sum() + 1e-4) / ((pred_labels != df_y).sum() + 1e-4)
+        acc = accuracy_score(df_y, pred_labels)
+        f1 = f1_score(df_y, pred_labels, average='macro')
+
+        pred_labels = pd.DataFrame({'pred_y': pred_labels,
+                                    'true_y': df_y.to_numpy()})
+
+        df_pred_scores = {}
+        for cl in classes:
+            index = mod.classes_.tolist().index(cl)
+            df_pred_scores[cl] = pred_scores[:, index]
+        df_pred_scores['true_y'] = df_y.to_numpy()
+        df_pred_scores = pd.DataFrame(df_pred_scores)
+
+        return [pred_labels, df_pred_scores, [acc, f1]]
+</file>
+
+<file path="project/classification/HuggingFaceModel.py">
+from transformers import AutoModelForSequenceClassification
+from transformers import TFAutoModelForSequenceClassification
+from transformers import AutoTokenizer, AutoConfig
+import numpy as np
+from scipy.special import softmax
+# Preprocess text (username and link placeholders)
+
+class SentiAnalyzer():
+    def __init__(self, model):
+
+        self.model = AutoModelForSequenceClassification.from_pretrained(model)
+        self.tokenizer = AutoTokenizer.from_pretrained(model)
+        self.config = AutoConfig.from_pretrained(model)
+    
+    '''
+    here we can see if different preprocessing 
+    '''
+    def preprocess(text):
+        new_text = []
+        for t in text.split(" "):
+            t = '@user' if t.startswith('@') and len(t) > 1 else t
+            t = 'http' if t.startswith('http') else t
+            new_text.append(t)
+            
+        return " ".join(new_text)
+    
+    def analyze(self, text):
+        text = SentiAnalyzer.preprocess(text)
+        encoded_input = self.tokenizer(text, return_tensors='pt')
+        output = self.model(**encoded_input)
+        scores = output[0][0].detach().numpy()
+        scores = softmax(scores)
+
+        ranking = np.argsort(scores)
+        ranking = ranking[::-1]
+        l = self.config.id2label[ranking[0]]
+        
+        return scores, l
+</file>
+
+<file path="project/classification/trainingModel.py">
+import numpy as np
+import pandas as pd
+
+# Classifiers
+from sklearn import ensemble, model_selection, metrics
+import lightgbm
+import matplotlib.pyplot as plt
+from sklearn.inspection import permutation_importance
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+
+
+def trainer(train_x, train_y, model_name, seed):
+
+    classifier = None
+    if model_name == 'LR':
+        classifier = LogisticRegression(n_jobs=-1, random_state=seed)
+    elif model_name == 'RF':
+        classifier = RandomForestClassifier(n_jobs=-1, random_state=seed)
+    elif model_name == 'NB':
+        classifier = GaussianNB()
+    elif model_name == 'SVC':
+        classifier = SVC(probability=True, random_state=seed)
+    elif model_name == 'DT':
+        classifier = DecisionTreeClassifier(random_state=seed)
+    elif model_name == 'KNN':
+        classifier = KNeighborsClassifier()
+
+
+    classifier.fit(train_x, train_y)
+
+    return classifier
+</file>
+
+<file path="project/quant_results/_Apple-Twitter-Sentiment-DFE/.~lock.ReadMe2-None-Apple-Twitter-Sentiment-DFE-15.csv#">
+,daniel,fedora,05.03.2026 19:56,/home/daniel/.local/share/onlyoffice;
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/pcs/files-pane.pper">
+{
+    "sortOrder": [
+        {
+            "columnIndex": 2,
+            "ascending": true
+        }
+    ],
+    "path": "C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/data/global_covid19_tweets"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/pcs/source-pane.pper">
+{
+    "activeTab": 0
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/pcs/windowlayoutstate.pper">
+{
+    "left": {
+        "splitterpos": 588,
+        "topwindowstate": "NORMAL",
+        "panelheight": 1311,
+        "windowheight": 1349
+    },
+    "right": {
+        "splitterpos": 579,
+        "topwindowstate": "NORMAL",
+        "panelheight": 1311,
+        "windowheight": 1349
+    }
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/pcs/workbench-pane.pper">
+{
+    "TabSet1": 0,
+    "TabSet2": 0,
+    "TabZoom": {}
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/per/t/2F91D236">
+{
+    "id": "2F91D236",
+    "path": "C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readCSV.R",
+    "project_path": "readCSV.R",
+    "type": "r_source",
+    "hash": "2208434710",
+    "contents": "",
+    "dirty": false,
+    "created": 1710782239108.0,
+    "source_on_save": false,
+    "relative_order": 5,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "82,26",
+        "scrollLine": "69"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1711283949,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1711283949195,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/per/t/2F91D236-contents">
+library(readme)
+library(tensorflow)
+
+
+datasets = list(
+  'global_covid19_tweets',
+  'nepali_dataset_eng',              
+  'Apple-Twitter-Sentiment-DFE'
+  )
+
+seeds = list(
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10
+  )
+
+
+for (s in seeds) {
+  print(paste0("++++++++++++++++++++++++++++++++++++++++++++++seed", s, "++++++++++++++++++++++++++++++++++++++++++++++"))
+  for (dataname in datasets) {
+    print(paste0("----------------------------", dataname, "----------------------------"))
+    seed_path = file.path("data", dataname, paste0("seed", s))
+    if (!file.exists(seed_path)) {
+      dir.create(seed_path)
+    }
+    
+    val_preds <- data.frame(matrix(ncol = 3, nrow = 0))
+    colnames(val_preds) <- c("-1", "0", "1")
+    i = 0
+    repeat {
+      print(paste("...................val", i, "..................."))
+      file_name = paste0(format(i), ".csv")  # 构建文件名
+      
+      relative_path <- file.path("data", dataname, "val", file_name)
+      
+      if(!file.exists(relative_path)) {
+        break
+      }
+      data_t = read.csv(relative_path)
+      # a = data_t["TEXT"]
+      # print(a)
+      data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+      
+      # Estimate category proportions
+      wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+      set.seed(s) # Set a seed if you choose
+      readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+      
+      # Output proportions estimate
+      val_pred = readme.estimates$point_readme
+      val_preds <- rbind(val_preds, val_pred)  # 将新行添加到DataFrame中
+      # print(val_pred)
+      
+      # # Compare to the truth
+      # true = table(data_t$TRUTH[data_t$TRAININGSET == 0])/sum(table((data_t$TRUTH[data_t$TRAININGSET == 0])))
+      # print(true)
+      
+      i = i+1
+    }
+    write.csv(val_preds, file.path(seed_path, "val_preds.csv"), row.names = FALSE)
+    
+    
+    test_preds <- data.frame(matrix(ncol = 3, nrow = 0))
+    colnames(test_preds) <- c("-1", "0", "1")
+    j = 0
+    repeat {
+      print(paste("...................test", j, "..................."))
+      file_name = paste0(format(j), ".csv")  # 构建文件名
+      
+      relative_path <- file.path("data", dataname, "test", file_name)
+      
+      if(!file.exists(relative_path)) {
+        break
+      }
+      data_t = read.csv(relative_path)
+      # a = data_t["TEXT"]
+      # print(a)
+      data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+      
+      # Estimate category proportions
+      wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+      set.seed(s) # Set a seed if you choose
+      readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+      
+      # Output proportions estimate
+      test_pred = readme.estimates$point_readme
+      test_preds <- rbind(test_preds, test_pred)  # 将新行添加到DataFrame中
+      # print(test_preds)
+      
+      # # Compare to the truth
+      # true = table(data_t$TRUTH[data_t$TRAININGSET == 0])/sum(table((data_t$TRUTH[data_t$TRAININGSET == 0])))
+      # print(true)
+      
+      j = j+1
+    } 
+    write.csv(test_preds, file.path(seed_path, "test_preds.csv"), row.names = FALSE)
+  }
+  
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/per/t/4C5FB8DC">
+{
+    "id": "4C5FB8DC",
+    "path": "C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/data/nepali_dataset_eng/seed2/test_preds.csv",
+    "project_path": "data/nepali_dataset_eng/seed2/test_preds.csv",
+    "type": "text",
+    "hash": "2849093057",
+    "contents": "",
+    "dirty": false,
+    "created": 1710861199679.0,
+    "source_on_save": false,
+    "relative_order": 6,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1710842212,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710842212,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/per/t/4C5FB8DC-contents">
+"-1","0","1"
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/per/t/9CC52215">
+{
+    "id": "9CC52215",
+    "path": "C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/my_data.csv",
+    "project_path": "my_data.csv",
+    "type": "text",
+    "hash": "965380137",
+    "contents": "",
+    "dirty": false,
+    "created": 1710783673560.0,
+    "source_on_save": false,
+    "relative_order": 7,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "0,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1710788554,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710788554,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/per/t/9CC52215-contents">
+"Column1","Column2"
+NA,NA
+0,2
+0,4
+0,6
+0,8
+0,10
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/per/t/F57144F3">
+{
+    "id": "F57144F3",
+    "path": "C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/data/nepali_dataset_eng/seed1/val_preds.csv",
+    "project_path": "data/nepali_dataset_eng/seed1/val_preds.csv",
+    "type": "text",
+    "hash": "3201785913",
+    "contents": "",
+    "dirty": false,
+    "created": 1710861189268.0,
+    "source_on_save": false,
+    "relative_order": 5,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1710798561,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710798561,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/per/t/F57144F3-contents">
+"X0.0451652282187639","X0.90047707223695","X0.0543576995442859"
+0.0451652282187639,0.90047707223695,0.0543576995442859
+0.0816540105209379,0.831712807582249,0.0866331818968131
+0.454785327168891,0.191661509816216,0.353553163014893
+0.683652067983099,0.040818267297539,0.275529664719362
+0.121673241931615,0.208719632982144,0.669607125086241
+0.544866744209137,0.0373133602188956,0.417819895571967
+0.725184824637967,0.0191476421856909,0.255667533176342
+0.594050547933353,0.0542171221471241,0.351732329919523
+0.367481650199858,0.0188732789140061,0.613645070886136
+0.903929927404862,0.0399672138110182,0.0561028587841204
+0.606922919889415,0.0407869817473347,0.352290098363251
+0.327382346278761,0.0315249547132639,0.641092699007975
+0.752272884372911,0.0162921119696401,0.231435003657449
+0.685109530034542,0.161570070573635,0.153320399391823
+0.479231202117816,0.0221602502345453,0.498608547647639
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/1BFA391F">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "3,8",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/2B2C2CC6">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "0,0",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/49BE738F">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "29,0",
+    "scrollLine": "7"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/6FBB5D12">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "0,0",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/81113864">
+{
+    "source_window_id": "",
+    "Source": "Source"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/88498E2F">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "82,26",
+    "scrollLine": "69"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/B1B3E35D">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "36,20",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/B3EC573F">
+{
+    "source_window_id": "",
+    "Source": "Source"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/B5AF8BDA">
+{
+    "source_window_id": "",
+    "Source": "Source"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/B7B5FFE2">
+{
+    "tempName": "Untitled1",
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "13,12",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/BA8E41E8">
+{
+    "source_window_id": "",
+    "Source": "Source"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/BE3A56B0">
+{
+    "source_window_id": "",
+    "Source": "Source"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/FC9BA2F7">
+{
+    "source_window_id": "",
+    "Source": "Source"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/sources/prop/INDEX">
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2F.Rhistory="6FBB5D12"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2F0.csv="B3EC573F"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2FReadMe2.R="B1B3E35D"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fdarft.R="B7B5FFE2"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fdata%2Fglobal_covid19_tweets%2Fseed1%2Ftest_preds.csv="B5AF8BDA"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fdata%2Fglobal_covid19_tweets%2Fval_preds.csv="81113864"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fdata%2Fnepali_dataset_eng%2Fseed1%2Ftest_preds.csv="FC9BA2F7"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fdata%2Fnepali_dataset_eng%2Fseed1%2Fval_preds.csv="BE3A56B0"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fdata%2Fnepali_dataset_eng%2Fseed2%2Ftest_preds.csv="BA8E41E8"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fexample2.R="49BE738F"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fmy_data.csv="2B2C2CC6"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2FreadCSV.R="88498E2F"
+C%3A%2FUsers%2Ffeiyu%2FPycharmProjects%2FpythonProject%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Freadme2_csv.R="1BFA391F"
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/rmd-outputs">
+
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/3BFB29B7/saved_source_markers">
+{"active_set":"","sets":[]}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/pcs/debug-breakpoints.pper">
+{
+    "debugBreakpointsState": {
+        "breakpoints": []
+    }
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/pcs/files-pane.pper">
+{
+    "sortOrder": [
+        {
+            "columnIndex": 2,
+            "ascending": true
+        }
+    ],
+    "path": "C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/pcs/packages-pane.pper">
+{
+    "installOptions": {
+        "installFromRepository": true,
+        "libraryPath": "C:/Users/z5300132/AppData/Local/R/win-library/4.3",
+        "installDependencies": true
+    }
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/pcs/source-pane.pper">
+{
+    "activeTab": 6
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/pcs/windowlayoutstate.pper">
+{
+    "left": {
+        "splitterpos": 397,
+        "topwindowstate": "NORMAL",
+        "panelheight": 951,
+        "windowheight": 989
+    },
+    "right": {
+        "splitterpos": 592,
+        "topwindowstate": "NORMAL",
+        "panelheight": 951,
+        "windowheight": 989
+    }
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/pcs/workbench-pane.pper">
+{
+    "TabSet1": 0,
+    "TabSet2": 2,
+    "TabZoom": {}
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/0B12BCA7">
+{
+    "tempName": "Untitled1",
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "5,0",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/0E221264">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "10,0",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/0EC711D9">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "0,0",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/1AE45E9E">
+{
+    "tempName": "Untitled2",
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "2,20",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/37523213">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "22,29",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/3F1ADE24">
+{
+    "source_window_id": "",
+    "Source": "Source"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/710CB610">
+{
+    "source_window_id": "",
+    "Source": "Source"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/7ACA5A90">
+{
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "27,0",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/C3C412A2">
+{
+    "tempName": "Untitled2",
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "22,16",
+    "scrollLine": "12"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/CFDC5C89">
+{
+    "tempName": "Untitled2",
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "2,0",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/E351D732">
+{
+    "tempName": "Untitled2",
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "4,0",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/E388C612">
+{
+    "tempName": "Untitled1",
+    "source_window_id": "",
+    "Source": "Source",
+    "cursorPosition": "6,0",
+    "scrollLine": "0"
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/prop/INDEX">
+C%3A%2FUsers%2Fz5300132%2FAppData%2FLocal%2FR%2Fwin-library%2F4.3%2Freadme%2Fdemo%2Freadme2demo.R="37523213"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2FTime%20Series%20Qua%2FA_pack_hypersearch%2FReadMe_Implement%2FreadCSV.R="E388C612"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2FTime%20Series%20Qua%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2FReadMe2.R="C3C412A2"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2FTime%20Series%20Qua%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fdata.csv="710CB610"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2FTime%20Series%20Qua%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fexample.R="E351D732"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2FTime%20Series%20Qua%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fexample2.R="1AE45E9E"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2FTime%20Series%20Qua%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Fprev.csv="0EC711D9"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2FTime%20Series%20Qua%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2FreadCSV.R="0B12BCA7"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2FTime%20Series%20Qua%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Freadme2_csv.R="CFDC5C89"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2FTime%20Series%20Qua%2FA_pack_hypersearch%2Fproject%2FReadMe_Implement%2Freadme2implement.R="3F1ADE24"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2Freadme-software-master%2Freadme%2Fdemo%2Freadme2demo.R="0E221264"
+C%3A%2FUsers%2Fz5300132%2FPycharmProjects%2FpythonProject%2Freadme-software-master%2Freproduce.R="7ACA5A90"
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/11E333AD">
+{
+    "id": "11E333AD",
+    "path": "C:/Users/z5300132/AppData/Local/R/win-library/4.3/readme/demo/readme2demo.R",
+    "project_path": null,
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1710694654278.0,
+    "source_on_save": false,
+    "relative_order": 7,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "22,29",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1710694345,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710694345,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/11E333AD-contents">
+##########
+### An example for how to generate estimates using readme2
+##########
+
+## Installation
+library(readme)
+library(tensorflow)
+
+## Load the data
+data(clinton, package="readme")
+
+## Load in the word vectors
+download_wordvecs()
+
+## Generate a word vector summary for each document using the cleaned text
+word_vectors = undergrad(documentText = cleanme(clinton$TEXT), wordVecs = NULL)
+
+# Estimate category proportions
+set.seed(2138) # Set a seed
+readme.estimates <- readme(dfm = as.matrix(word_vectors) , labeledIndicator = clinton$TRAININGSET, categoryVec = clinton$TRUTH)
+
+# Output proportions estimate
+readme.estimates$point_readme
+
+# Compare to the truth
+table(clinton$TRUTH[clinton$TRAININGSET == 0])/sum(table((clinton$TRUTH[clinton$TRAININGSET == 0])))
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/35A9721E">
+{
+    "id": "35A9721E",
+    "path": null,
+    "project_path": null,
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1710673264984.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "6,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 3418906613689248367,
+    "encoding": "",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710694410791,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/35A9721E-contents">
+devtools::install_github("iqss-research/readme-software/readme")
+
+devtools::install_github("rstudio/tensorflow")
+
+library(tensorflow)
+install_tensorflow()
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/560F9C70">
+{
+    "id": "560F9C70",
+    "path": "C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/readCSV.R",
+    "project_path": "readCSV.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1710216527924.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "5,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1710615436,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710615436,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/560F9C70-contents">
+library(readme)
+library(tensorflow)
+
+ 
+dataname = 'global_covid19_tweets'
+
+i = 0
+repeat {
+  file_name = paste0(format(i), ".csv")  # 构建文件名
+
+  relative_path <- file.path("data", dataname, file_name)
+
+  if(!file.exists(relative_path)) {
+    break
+  }
+  data_t = read.csv(relative_path)
+  # a = data_t["TEXT"]
+  # print(a)
+  data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+  # if (is.character(data_t[["TEXT"]])) {
+  #   data_t[["TEXT"]] <- gsub("\0", "", data_t[["TEXT"]])
+  # }
+  
+  wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+
+  # Estimate category proportions
+  set.seed(2138) # Set a seed if you choose
+  readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+
+
+  # Output proportions estimate
+  pred = readme.estimates$point_readme
+  pred = as.list(pred)
+  print(pred)
+  # print(class(pred))
+  
+  # Compare to the truth
+  true = table(data_t$TRUTH[data_t$TRAININGSET == 0])/sum(table((data_t$TRUTH[data_t$TRAININGSET == 0])))
+  print(true)
+  
+  i = i+1
+  print(i)
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/73727E11">
+{
+    "id": "73727E11",
+    "path": "C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/example2.R",
+    "project_path": "example2.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1710659260480.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "tempName": "Untitled2",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "2,20",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1710680247,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710680247140,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/73727E11-contents">
+# my_function.R
+
+# 定义一个函数，接收一个数据框作为参数
+fuckR <- function(data_t, seed_) {
+  library(readme)
+  library(tensorflow)
+  
+  # 打印收到的数据框
+  print('fuckR!')
+  
+  data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+  
+  wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+  
+  # Estimate category proportions
+  set.seed(seed_) # Set a seed if you choose
+  readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+  
+  # Output proportions estimate
+  qua_prev = readme.estimates$point_readme
+  
+  # # Compare to the truth
+  # true = table(data_t$TRUTH[data_t$TRAININGSET == 0])/sum(table((data_t$TRUTH[data_t$TRAININGSET == 0])))
+  prev_df <- as.data.frame(t(qua_prev))
+  write.csv(prev_df, file = "prev.csv", row.names = FALSE)
+  
+  return(qua_prev)
+  
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/75173B50">
+{
+    "id": "75173B50",
+    "path": "C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/readme2_csv.R",
+    "project_path": "readme2_csv.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1710657377856.0,
+    "source_on_save": false,
+    "relative_order": 8,
+    "properties": {
+        "tempName": "Untitled2",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "2,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1710692698,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710692698540,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/75173B50-contents">
+library(readme)
+library(tensorflow)
+
+# 定义一个函数
+readme2 <- function(data_t, seed_) {
+  
+  data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+  
+  wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+  
+  # Estimate category proportions
+  set.seed(seed_) # Set a seed if you choose
+  readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+  
+  # Output proportions estimate
+  qua_prev = readme.estimates$point_readme
+  
+  # # Compare to the truth
+  # true = table(data_t$TRUTH[data_t$TRAININGSET == 0])/sum(table((data_t$TRUTH[data_t$TRAININGSET == 0])))
+  prev_df <- as.data.frame(t(qua_prev))
+  write.csv(prev_df, file = "prev.csv", row.names = FALSE)
+  
+  return(qua_prev)
+}
+
+
+# 使用函数
+# dataname = 'global_covid19_tweets'
+# file_name = paste0(format(0), ".csv")  # 构建文件名
+# relative_path = file.path("data", dataname, file_name)
+
+datat = read.csv("0.csv")
+seed = 1
+prev = readme2(datat, seed)
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/DD3DFC40-contents">
+##########
+### An example for how to generate estimates using readme2
+##########
+
+## Installation
+library(readme)
+library(tensorflow)
+
+## Load the data
+data(clinton, package="readme")
+
+# ## Load in the word vectors
+# download_wordvecs()
+
+## Generate a word vector summary for each document using the cleaned text
+word_vectors = undergrad(documentText = cleanme(clinton$TEXT), wordVecs = NULL)
+
+# Estimate category proportions
+set.seed(2138) # Set a seed
+readme.estimates <- readme(dfm = as.matrix(word_vectors) , labeledIndicator = clinton$TRAININGSET, categoryVec = clinton$TRUTH)
+
+# Output proportions estimate
+readme.estimates$point_readme
+
+# Compare to the truth
+table(clinton$TRUTH[clinton$TRAININGSET == 0])/sum(table((clinton$TRUTH[clinton$TRAININGSET == 0])))
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/E69B9A56">
+{
+    "id": "E69B9A56",
+    "path": "C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R",
+    "project_path": "ReadMe2.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1710591605405.0,
+    "source_on_save": false,
+    "relative_order": 7,
+    "properties": {
+        "tempName": "Untitled2",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "22,16",
+        "scrollLine": "12"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1710695363,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710695363405,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/E69B9A56-contents">
+library(readme)
+library(tensorflow)
+
+# 定义一个函数
+readme2 <- function(data_t, seed_) {
+# readme2 <- function() {
+  
+  data_t = read.csv("0.csv")
+  seed_ = 1
+  
+  data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+
+  wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+  
+  # Estimate category proportions
+  set.seed(seed_) # Set a seed if you choose
+  readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+  
+  # Output proportions estimate
+  qua_prev = readme.estimates$point_readme
+  
+  prev_df <- as.data.frame(t(qua_prev))
+  print(prev_df)
+  write.csv(prev_df, file = "prev.csv", row.names = FALSE)
+
+  # return(qua_prev)
+}
+
+
+# # 使用函数
+# dataname = 'global_covid19_tweets'
+# file_name = paste0(format(0), ".csv")  # 构建文件名
+# relative_path = file.path("data", dataname, file_name)
+# 
+# datat = read.csv("0.csv")
+# seed = 1
+# readme2(datat, seed)
+# # prev = readme2(datat, seed)
+# # print(prev)
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/FA431460">
+{
+    "id": "FA431460",
+    "path": "C:/Users/z5300132/PycharmProjects/pythonProject/readme-software-master/reproduce.R",
+    "project_path": null,
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1710528214885.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "27,0",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1710527704,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1710527704,
+    "read_only": false,
+    "read_only_alternatives": []
+}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/FA431460-contents">
+library(readme)
+data(clinton, package="readme")
+
+class(clinton)
+
+write.csv(clinton, "wocao.csv", row.names = TRUE)
+
+my_data <- read.csv("wocao.csv")
+
+
+
+library(tokenizers)
+# data.table::fread(file.path(targetDir, "glove.6B.200d.txt"), quote = "")
+## Generate a word vector summary for each document
+wordVec_summaries = undergrad(documentText = cleanme(clinton$TEXT), wordVecs = NULL)
+
+# Estimate category proportions
+set.seed(2138) # Set a seed if you choose
+readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = clinton$TRAININGSET, categoryVec = clinton$TRUTH)
+
+
+# Output proportions estimate
+readme.estimates$point_readme
+# Compare to the truth
+table(clinton$TRUTH[clinton$TRAININGSET == 0])/sum(table((clinton$TRUTH[clinton$TRAININGSET == 0])))
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/sources/session-982480c8/lock_file">
+
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/persistent-state">
+build-last-errors="[]"
+build-last-errors-base-dir=""
+build-last-outputs="[]"
+compile_pdf_state="{\"tab_visible\":false,\"running\":false,\"target_file\":\"\",\"output\":\"\",\"errors\":[]}"
+files.monitored-path=""
+find-in-files-state="{\"handle\":\"\",\"input\":\"\",\"path\":\"\",\"regex\":false,\"ignoreCase\":false,\"results\":{\"file\":[],\"line\":[],\"lineValue\":[],\"matchOn\":[],\"matchOff\":[],\"replaceMatchOn\":[],\"replaceMatchOff\":[]},\"running\":false,\"replace\":false,\"preview\":false,\"gitFlag\":false,\"replacePattern\":\"\"}"
+imageDirtyState="1"
+saveActionState="-1"
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/rmd-outputs">
+
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/A0BEBBF1/saved_source_markers">
+{"active_set":"","sets":[]}
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/shared/notebooks/patch-chunk-names">
+
+</file>
+
+<file path="project/ReadMe_Implement/.Rproj.user/shared/notebooks/paths">
+C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/.Rhistory="CB9B737B"
+C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/0.csv="856ACD0F"
+C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R="6498F85A"
+C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/darft.R="910C737B"
+C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/data/global_covid19_tweets/seed1/test_preds.csv="8BD72294"
+C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/data/global_covid19_tweets/val_preds.csv="53F1DDF3"
+C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/data/nepali_dataset_eng/seed1/test_preds.csv="84607942"
+C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/example2.R="1B87C4D2"
+C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readme2_csv.R="90F361E2"
+</file>
+
+<file path="project/ReadMe_Implement/.Rhistory">
+print("???")
+print(data)
+data = 1
+gc()
+print('2')
+tryCatch({
+data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# 显示数据的前几行
+head(data)
+}, error = function(e) {
+cat("An error occurred:", e$message, "\n")
+})
+yCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+print('2')
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+#
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+#
+# # 读取CSV文件
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+#
+# # 读取CSV文件
+# data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+#
+# # 读取CSV文件
+# data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+#
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+#
+# # 读取CSV文件
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+#
+# # 读取CSV文件
+# data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+#
+# # 读取CSV文件
+# data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# # setwd("path_to_your_directory")
+#
+# # 读取CSV文件
+# data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#
+# # 显示数据的前几行
+# tryCatch({
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/ReadMe_Implement/readCSV.R")
+yCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+print('2')
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+print('2')
+# # 设置工作目录，如果你的CSV文件不在默认的工作目录下
+print('2')
+print('2')
+print('2')
+# 读取CSV文件
+data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# 显示数据的前几行
+head(data)
+print('2')
+# 读取CSV文件
+data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# 显示数据的前几行
+head(data)
+#data <- read.csv("New Text Document", encoding="UTF-8")
+#data = 1
+print('2')
+# 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# setwd("path_to_your_directory")
+# 读取CSV文件
+data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# 显示数据的前几行
+head(data)
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+#data <- read.csv("New Text Document", encoding="UTF-8")
+#data = 1
+print('2')
+# 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# setwd("path_to_your_directory")
+# 读取CSV文件
+data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# 显示数据的前几行
+head(data)
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+#data <- read.csv("New Text Document", encoding="UTF-8")
+#data = 1
+print('2')
+# 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# setwd("path_to_your_directory")
+# 读取CSV文件
+data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# 显示数据的前几行
+head(data)
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+#data <- read.csv("New Text Document", encoding="UTF-8")
+#data = 1
+print('2')
+# 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# setwd("path_to_your_directory")
+# 读取CSV文件
+data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# 显示数据的前几行
+head(data)
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+#data <- read.csv("New Text Document", encoding="UTF-8")
+#data = 1
+print('2')
+# 设置工作目录，如果你的CSV文件不在默认的工作目录下
+# setwd("path_to_your_directory")
+# 读取CSV文件
+data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# 显示数据的前几行
+head(data)
+# tryCatch({
+#   data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+#   # 显示数据的前几行
+#   head(data)
+# }, error = function(e) {
+#   cat("An error occurred:", e$message, "\n")
+# })
+print('2')
+# 读取CSV文件
+data <- read.csv("Apple-Twitter-Sentiment-DFE.csv")
+# 显示数据的前几行
+head(data)
+# 读取CSV文件
+data <- read.csv("..\Apple-Twitter-Sentiment-DFE.csv")
+print('2')
+# 读取CSV文件
+data <- read.csv(r"..\Apple-Twitter-Sentiment-DFE.csv")
+print('2')
+# 读取CSV文件
+data <- read.csv("../Apple-Twitter-Sentiment-DFE.csv")
+# 读取CSV文件
+data <- read.csv("..\time series qua\Nepali_dataset_Eng.csv")
+# 读取CSV文件
+data <- read.csv("../time series qua/Nepali_dataset_Eng.csv")
+# 显示数据的前几行
+head(data)
+View(data)
+data <- read.csv("../time series qua/Nepali_dataset_Eng.csv")
+head(data)
+View(data)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/ReadMe_Implement/readCSV.R", echo=TRUE)
+data <- read.csv("../time series qua/Nepali_dataset_Eng.csv")
+head(data)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/ReadMe_Implement/readCSV.R", echo=TRUE)
+load("C:/Users/z5300132/Downloads/nd.rda")
+View(nd)
+load("C:/Users/z5300132/AppData/Local/Temp/1c5f6c7c-7370-4e03-b992-87a5da1d8deb_capsule-03f6dcc8-b7c8-4a59-97c8-7e2914d2543d.zip.deb/data/PrecomputedMaterial/SPLITS_01_Bridesmaids.RData")
+View(indices_list)
+load("C:/Users/z5300132/AppData/Local/Temp/f9673b9a-e867-4d87-9a03-ebd0fb86d270_capsule-03f6dcc8-b7c8-4a59-97c8-7e2914d2543d.zip.270/data/PrecomputedMaterial/SPLITS_01_Bridesmaids.RData")
+View(indices_list)
+load("C:/Users/z5300132/Downloads/nd.rda")
+View(nd)
+load("C:/Users/z5300132/AppData/Local/Temp/890ed2b7-af50-4842-8f3a-a413ad390266_capsule-03f6dcc8-b7c8-4a59-97c8-7e2914d2543d.zip.266/data/PrecomputedMaterial/SPLITS_01_Bridesmaids.RData")
+install.packages(c("processx", "ragg", "sass", "tinytex"))
+devtools::install_github("iqss-research/readme-software/readme")
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+source("C:/Users/z5300132/AppData/Local/R/win-library/4.3/readme/demo/readme2demo.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+detach("package:tensorflow", unload = TRUE)
+library(tensorflow)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+gc()
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+reticulate::py_last_error()
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/readme2_csv.R", echo=TRUE)
+detach("package:tensorflow", unload = TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/readme2_csv.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/example2.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+source("C:/Users/z5300132/PycharmProjects/pythonProject/Time Series Qua/A_pack_hypersearch/project/ReadMe_Implement/readme2_csv.R", echo=TRUE)
+remove.packages("readme")
+remove.packages("tensorflow")
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/ReadMe2.R", echo=TRUE)
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readme2_csv.R", echo=TRUE)
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readme2_csv.R", echo=TRUE)
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readme2_csv.R", echo=TRUE)
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readme2_csv.R", echo=TRUE)
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/example2.R", echo=TRUE)
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/example2.R", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+gc()
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readCSV.R", echo=TRUE)
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readCSV.R", echo=TRUE)
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readCSV.R", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+source("~/.active-rstudio-document", echo=TRUE)
+gc()
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readCSV.R", echo=TRUE)
+gc()
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readCSV.R", echo=TRUE)
+source("C:/Users/feiyu/PycharmProjects/pythonProject/A_pack_hypersearch/project/ReadMe_Implement/readCSV.R", echo=TRUE)
+</file>
+
+<file path="project/ReadMe_Implement/ReadMe_Implement.Rproj">
+Version: 1.0
+
+RestoreWorkspace: Default
+SaveWorkspace: Default
+AlwaysSaveHistory: Default
+
+EnableCodeIndexing: Yes
+UseSpacesForTab: Yes
+NumSpacesForTab: 2
+Encoding: UTF-8
+
+RnwWeave: Sweave
+LaTeX: pdfLaTeX
+</file>
+
+<file path="project/results_script/ploting.py">
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+
+def plots(true_dsts, quantified_dsts, modified_dsts, dataset, head, condition, c, qua, tsa, show=True):
+    fig, _ = plt.subplots(len(c), 1, figsize=(10, 6))
+    fig.suptitle(head + condition)
+    x = [j for j in range(true_dsts.shape[0])]
+
+    # # slice cut
+    # x = [j for j in range(true_dsts.shape[0]-255)]
+    # true_dsts = true_dsts[40:-215, :]
+    # quantified_dsts = quantified_dsts[40:-215, :]
+    # modified_dsts = modified_dsts[40:-215, :]
+
+    # x = [j for j in range(true_dsts.shape[0] - 285)]
+    # true_dsts = true_dsts[65:-220, :]
+    # quantified_dsts = quantified_dsts[65:-220, :]
+    # modified_dsts = modified_dsts[65:-220, :]
+
+
+    for i in range(len(c)):
+        if i != len(c)-1:
+            orig = _[i].plot(x, true_dsts[:, i], color='black', label='True')
+            quant = _[i].plot(x,  quantified_dsts[:, i], color='blue', label=qua)
+            combi = _[i].plot(x, modified_dsts[:, i], color='orange', label=f'{qua}+{tsa}')
+            # combi = _[i].plot(x, modified_dsts[:, i], color='orange', label='TSA')
+            _[i].set_ylabel('Prevalence of '+str(c[i]))
+            _[i].tick_params('x', labelbottom=False)
+            _[i].legend(loc='upper right')
+            _[i].grid()
+
+        else:
+            orig = _[i].plot(x, true_dsts[:, i], color='black', label='True')
+            quant = _[i].plot(x,  quantified_dsts[:, i], color='blue', label=qua)
+            combi = _[i].plot(x, modified_dsts[:, i], color='orange', label=f'{qua}+{tsa}')
+            # combi = _[i].plot(x, modified_dsts[:, i], color='orange', label='TSA')
+            _[i].set_ylabel('Prevalence of '+str(c[i]))
+            _[i].legend(loc='upper right')
+            _[i].set_xlabel('Timestamp Unit')
+            _[i].grid()
+
+    # plt.subplots_adjust(left=0.07, right=0.975, top=0.96, bottom=0.1)  # adjust the blank
+
+    if not os.path.exists(rf'.\plots\_{dataset}'):
+        os.makedirs(rf'.\plots\_{dataset}')
+
+    plt.savefig(rf'.\plots\_{dataset}\{head[16:-15]}-{condition}.png', dpi=150)
+    # plt.savefig(rf'.\plots\_{dataset}\{head[16:-15]}-{condition}.eps', format='eps')
+
+    if show:
+        plt.show(block=False)
+
+    return [x, true_dsts[:, 0], quantified_dsts[:, 0], modified_dsts[:, 0]]
+</file>
+
+<file path="project/results_script/results_describe_costomized.py">
+import pandas as pd
+import numpy as np
+
+
+seeds = [1,
+         # 2,
+         # 3,
+         # 4,
+         # 5,
+         # 6,
+         # 7,
+         # 8,
+         # 9,
+         # 42
+         ]
+
+# TSF = ['QFY', 'MA', 'WAUA', 'KFUA', 'GPR', 'KFGPR']
+TSF = ['QFY', 'MA', 'WA-LR-LI', 'KF-Ens', 'KF-MA']
+
+# tot = np.zeros(72*6).reshape(72, 6)
+tot = np.zeros(3*3*3*5).reshape(3*3*3, 5)
+for seed in seeds:
+    res = pd.read_csv(r'../Output_Files/PAKDD/MAE results seed '+str(seed)+' (has kf ens).csv')
+    res = res.to_numpy()[:, 3:9]
+    tot = tot + res
+tot = tot / len(seeds)
+
+tot_res = pd.read_csv(r'../Output_Files/PAKDD/MAE results seed '+str(1)+' (has kf ens).csv').iloc[:, :3]
+for i, m in enumerate(TSF):
+    tot_res[m] = tot[:, i]
+
+# Save quanti_results of one random case in to a table
+TSF_results = tot_res.iloc[:, 3:9]
+best_m = []
+for i in range(len(TSF_results)):
+    mini = 1
+    m_num = -1
+    for col_num, cell in enumerate(TSF_results.iloc[i, :]):
+        if cell < mini:
+            mini = cell
+            m_num = col_num
+    best_m.append(TSF[m_num])
+
+win_counts = {'QFY': [0], 'MA': [0], 'WA-LR-LI': [0], 'KF-Ens': [0], 'KF-MA': [0]}
+for m in best_m:
+    win_counts[m][0] = win_counts[m][0] + 1
+df_win_counts = pd.DataFrame(win_counts)
+df_win_counts.to_csv('../Output_Files/PAKDD/win_counts.csv')
+
+pairs = []
+for m_i in range(len(TSF)-1, -1, -1):
+    if m_i == 0:
+        break
+    for m_j in range(m_i-1, -1, -1):
+        pair_win_counts = {TSF[m_i]: 0, TSF[m_j]: 0}
+        for row in range(len(TSF_results)):
+            if TSF_results.iloc[row, m_i] > TSF_results.iloc[row, m_j]:
+                pair_win_counts[TSF[m_j]] = pair_win_counts[TSF[m_j]] + 1
+            elif TSF_results.iloc[row, m_i] < TSF_results.iloc[row, m_j]:
+                pair_win_counts[TSF[m_i]] = pair_win_counts[TSF[m_i]] + 1
+            else:
+                pair_win_counts[TSF[m_i]] = pair_win_counts[TSF[m_i]] + 1
+                pair_win_counts[TSF[m_j]] = pair_win_counts[TSF[m_j]] + 1
+        pairs.append([TSF[m_i], TSF[m_j], pair_win_counts[TSF[m_i]], pair_win_counts[TSF[m_j]]])
+pairs = np.array(pairs)
+pair_wins = pd.DataFrame({'method 1': pairs[:, 0],
+                          'method 2': pairs[:, 1],
+                          'method 1 wins': pairs[:, 2],
+                          'method 2 wins': pairs[:, 3]})
+pair_wins.to_csv('../Output_Files/PAKDD/pair_wins.csv')
+
+tot_res['best_method'] = np.array(best_m)
+tot_res.to_csv('../Output_Files/PAKDD/MAE quanti_results mean.csv')
+</file>
+
+<file path="project/results_script/results_describe.py">
+import pandas as pd
+import numpy as np
+
+
+seeds = [1,
+         # 2,
+         # 3,
+         # 4,
+         # 5,
+         # 6,
+         # 7,
+         # 8,
+         # 9,
+         # 10
+         ]
+
+# TSF = ['QFY', 'MA', 'WAUA', 'KFUA', 'GPR', 'KFGPR']
+TSF = ['QFY', 'MA', 'WAUA', 'KFUA', 'KFMA', 'GPR']
+
+# tot = np.zeros(72*6).reshape(72, 6)
+tot = np.zeros(3*4*5*6).reshape(3*4*5, 6)
+for seed in seeds:
+    res = pd.read_csv(r'../Output_Files/MAE results seed '+str(seed)+'.csv').drop(labels=['Unnamed: 0'], axis=1)
+    res = res.to_numpy()[:, 3:9]
+    tot = tot + res
+tot = tot / len(seeds)
+
+tot_res = pd.read_csv(r'../Output_Files/MAE results seed '+str(1)+'.csv').iloc[:, :4]
+for i, m in enumerate(TSF):
+    tot_res[m] = tot[:, i]
+
+# Save quanti_results of one random case in to a table
+TSF_results = tot_res.iloc[:, 4:10]
+best_m = []
+for i in range(len(TSF_results)):
+    mini = 1
+    m_num = -1
+    for col_num, cell in enumerate(TSF_results.iloc[i, :]):
+        if cell < mini:
+            mini = cell
+            m_num = col_num
+    best_m.append(TSF[m_num])
+
+# # win_counts = {'QFY': [0], 'MA': [0], 'WAUA': [0], 'KFUA': [0], 'GPR': [0], 'KFGPR': [0]}
+# win_counts = {'QFY': [0], 'MA': [0], 'WAUA': [0], 'KFUA': [0], 'KFMA': [0], 'GPR': [0]}
+# for m in best_m:
+#     win_counts[m][0] = win_counts[m][0] + 1
+# df_win_counts = pd.DataFrame(win_counts)
+# df_win_counts.to_csv('../Output_Files/win_counts.csv')
+#
+# pairs = []
+# for m_i in range(len(TSF)-1, -1, -1):
+#     if m_i == 0:
+#         break
+#     for m_j in range(m_i-1, -1, -1):
+#         pair_win_counts = {TSF[m_i]: 0, TSF[m_j]: 0}
+#         for row in range(len(TSF_results)):
+#             if TSF_results.iloc[row, m_i] > TSF_results.iloc[row, m_j]:
+#                 pair_win_counts[TSF[m_j]] = pair_win_counts[TSF[m_j]] + 1
+#             elif TSF_results.iloc[row, m_i] < TSF_results.iloc[row, m_j]:
+#                 pair_win_counts[TSF[m_i]] = pair_win_counts[TSF[m_i]] + 1
+#             else:
+#                 pair_win_counts[TSF[m_i]] = pair_win_counts[TSF[m_i]] + 1
+#                 pair_win_counts[TSF[m_j]] = pair_win_counts[TSF[m_j]] + 1
+#         pairs.append([TSF[m_i], TSF[m_j], pair_win_counts[TSF[m_i]], pair_win_counts[TSF[m_j]]])
+# pairs = np.array(pairs)
+# pair_wins = pd.DataFrame({'method 1': pairs[:, 0],
+#                           'method 2': pairs[:, 1],
+#                           'method 1 wins': pairs[:, 2],
+#                           'method 2 wins': pairs[:, 3]})
+# pair_wins.to_csv('../Output_Files/pair_wins.csv')
+
+tot_res['best_method'] = np.array(best_m)
+tot_res = tot_res.drop(labels=['Unnamed: 0'], axis=1)
+tot_res.to_csv('../Output_Files/MAE quanti_results mean.csv')
+</file>
+
+<file path="project/data_proc_toR.py">
+import pandas as pd
+import os
+import data_loading
+from utils import val_test_split
+
+
+def proc(val, data, name):
+    val['TRAININGSET'] = 1
+    n_valsubsamples = name[1]
+
+    for i in range(len(data)):
+        data[i]['TRAININGSET'] = 0
+        comb = pd.concat([val, data[i]], axis=0)
+        comb = comb.rename(columns={'label': 'TRUTH', 'text': 'TEXT'})
+
+        valsets_folder = rf'.\ReadMe_Implement\data\{name[0]}\val'
+        testsets_folder = rf'.\ReadMe_Implement\data\{name[0]}\test'
+        if not os.path.exists(valsets_folder):
+            os.makedirs(valsets_folder)
+        if not os.path.exists(testsets_folder):
+            os.makedirs(testsets_folder)
+
+        if i < n_valsubsamples:
+            comb.to_csv(rf'{valsets_folder}\{i}.csv', index=False)
+        else:
+            comb.to_csv(rf'{testsets_folder}\{i-n_valsubsamples}.csv', index=False)
+    return
+
+
+def proc_single(val, test):
+    val['TRAININGSET'] = 1
+    test['TRAININGSET'] = 0
+    comb = pd.concat([val, test], axis=0).rename(columns={'label': 'TRUTH', 'text': 'TEXT'})
+    return comb
+
+
+text_senti_data = [('global_covid19_tweets', 15), ('nepali_dataset_eng', 15), ('Apple-Twitter-Sentiment-DFE', 15)]
+
+for data_name in text_senti_data:
+    ts_chunks, ts_prevalence, c, t_size = data_loading.loading(data_name[0])
+    val_set, test_sets, test_dsts = val_test_split(ts_chunks.copy(), ts_prevalence, data_name[1])
+    proc(val_set, ts_chunks, data_name)
+</file>
+
+<file path="project/quantifications.py">
+import numpy as np
+from quantifiers import DyS, ACC, GPAC, EDy
+from sklearn.metrics import confusion_matrix
+from classification import Classifying
+import pandas as pd
+from utils import mse, mae
+import os
+
+
+def ACC_on_TSsets(val_set, test_set_dict, senti_model, classes):
+    val_y_res = Classifying.analyzer(val_set, senti_model, classes)
+    val_y_ = val_y_res[0]
+
+    tests_y_ = {}
+    for i in range(len(test_set_dict)):
+        test_y_ = Classifying.analyzer(test_set_dict[i], senti_model, classes)[0]
+        tests_y_[i] = test_y_
+
+    qtfied_distribution = []
+    for i, cla in enumerate(classes):
+        val_y_one = val_y_.copy()
+
+        val_y_one.loc[val_y_one['true_y'] == cla, 'true_y'] = 'True'
+        val_y_one.loc[val_y_one['true_y'].isin(classes), 'true_y'] = 'False'
+        val_y_one.loc[val_y_one['pred_y'] == cla, 'pred_y'] = 'True'
+        val_y_one.loc[val_y_one['pred_y'].isin(classes), 'pred_y'] = 'False'
+        tn, fp, fn, tp = confusion_matrix(val_y_one['true_y'], val_y_one['pred_y']).ravel()
+        tpr = tp / (tp+fn)
+        fpr = fp / (fp+tn)
+
+        qtfied_prevs_one = []
+        for j in range(len(test_set_dict)):
+            test_y_one = tests_y_[j]['pred_y'].copy()
+            test_y_one[test_y_one == cla] = 'True'
+            test_y_one[test_y_one.isin(classes)] = 'False'
+            qua_prev = ACC(test_y_one, tpr, fpr)
+            qtfied_prevs_one.append(qua_prev)
+        qtfied_distribution.append(qtfied_prevs_one)
+
+    qtfied_distribution = np.array(qtfied_distribution).T
+    qtfied_distribution[np.all(qtfied_distribution == 0, axis=1)] = 1
+    qtfied_distribution = qtfied_distribution / (np.sum(qtfied_distribution, axis=1).reshape(-1, 1))
+    return qtfied_distribution
+
+
+def DyS_on_TSsets(val_set, test_set_dict, senti_model, classes):
+    val_y_res = Classifying.analyzer(val_set, senti_model, classes)
+    val_score = val_y_res[1]
+
+    tests_scores = {}
+    for i in range(len(test_set_dict)):
+        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
+        tests_scores[i] = test_score
+
+    qtfied_distribution = []
+    for i, cla in enumerate(classes):
+        val_score_one = val_score[val_score['true_y'] == cla][cla]
+        val_score_rest = val_score[val_score['true_y'] != cla][cla]
+
+        qtfied_prevs_one = []
+        for j in range(len(test_set_dict)):
+            test_score_one = tests_scores[j][cla]
+            qua_prev = DyS(val_score_one, val_score_rest, test_score_one, measure='topsoe')
+            qtfied_prevs_one.append(qua_prev)
+        qtfied_distribution.append(qtfied_prevs_one)
+
+    qtfied_distribution = np.array(qtfied_distribution).T
+    qtfied_distribution[np.all(qtfied_distribution == 0, axis=1)] = 1
+    qtfied_distribution = qtfied_distribution / (np.sum(qtfied_distribution, axis=1).reshape(-1, 1))
+
+    return qtfied_distribution
+
+
+def GPAC_on_TSsets(val_set, test_set_dict, senti_model, classes):
+    val_res = Classifying.analyzer(val_set, senti_model, classes)
+    val_scores = val_res[1].iloc[:, :-1].to_numpy()
+    val_labels = val_res[0]
+
+    tests_scores = {}
+    for i in range(len(test_set_dict)):
+        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
+        tests_scores[i] = test_score.iloc[:, :-1].to_numpy()
+
+    qtfied_distribution = []
+    for j in range(len(test_set_dict)):
+        qua_prev = GPAC(val_scores,
+                        tests_scores[j],
+                        val_labels['true_y'].to_numpy(),
+                        classes)
+        qtfied_distribution.append(qua_prev)
+
+    qtfied_distribution = np.array(qtfied_distribution)
+
+    return qtfied_distribution
+
+
+def EDy_on_TSsets(val_set, test_set_dict, senti_model, classes):
+    val_res = Classifying.analyzer(val_set, senti_model, classes)
+    val_scores = val_res[1].iloc[:, :-1].to_numpy()
+    val_labels = val_res[0]
+
+    tests_scores = {}
+    for i in range(len(test_set_dict)):
+        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
+        tests_scores[i] = test_score.iloc[:, :-1].to_numpy()
+
+    qtfied_distribution = []
+    for j in range(len(test_set_dict)):
+        qua_prev = EDy(val_scores,
+                       val_labels['true_y'].to_numpy(),
+                       tests_scores[j],
+                       classes)
+        qtfied_distribution.append(qua_prev)
+
+    qtfied_distribution = np.array(qtfied_distribution)
+
+    return qtfied_distribution
+
+
+def CC_on_TSsets(test_set_dict, senti_model, classes):
+    tests_y_ = {}
+    for i in range(len(test_set_dict)):
+        test_y_ = Classifying.analyzer(test_set_dict[i], senti_model, classes)[0]
+        tests_y_[i] = test_y_
+
+    qtfied_distribution = []
+    for j in range(len(test_set_dict)):
+        qua_prev = []
+        s = len(tests_y_[j])
+        for c in classes:
+            n = tests_y_[j][tests_y_[j]['pred_y'] == c]['pred_y'].count()
+            qua_prev.append(n/s)
+
+        qtfied_distribution.append(qua_prev)
+
+    qtfied_distribution = np.array(qtfied_distribution)
+
+    return qtfied_distribution
+
+
+def getMAE_val_set(val_set, qua, mod, c, data, name, random_seed):
+    subsamples_dict = {}
+    subsamples_dsts = []
+    for i in range(name[1]):
+        subsamples_dict[i] = data[i]
+        s = subsamples_dict[i].value_counts('label').sum()
+        p = []
+        for label in c:
+            p.append(subsamples_dict[i][subsamples_dict[i]['label'] == label]['label'].count() / s)
+        subsamples_dsts.append(p)
+
+    subsamples_prevs = np.array(subsamples_dsts)
+
+    val_MAE, val_MSE, sep_MAE, qtfd_dsts = None, None, None, None
+
+    if qua == 'DyS':
+        qtfd_dsts = DyS_on_TSsets(val_set, subsamples_dict, mod, c)
+    elif qua == 'ACC':
+        qtfd_dsts = ACC_on_TSsets(val_set, subsamples_dict, mod, c)
+    elif qua == 'GPAC':
+        qtfd_dsts = GPAC_on_TSsets(val_set, subsamples_dict, mod, c)
+    elif qua == 'EDy':
+        qtfd_dsts = EDy_on_TSsets(val_set, subsamples_dict, mod, c)
+    elif qua == 'CC':
+        qtfd_dsts = CC_on_TSsets(subsamples_dict, mod, c)
+    elif qua == 'ReadMe2':
+        qtfd_dsts = np.array(pd.read_csv(f'./ReadMe_Implement/data/{name[0]}/seed{random_seed}/val_preds.csv'))
+
+    sep_MAE = abs(subsamples_prevs - qtfd_dsts).sum(axis=0) / len(subsamples_dsts)
+    val_MAE = mae(subsamples_prevs, qtfd_dsts)
+    val_MSE = mse(subsamples_prevs, qtfd_dsts)
+    return val_MAE, val_MSE, sep_MAE, qtfd_dsts
+
+
+def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
+
+    try:
+        quantified_dsts = pd.read_csv(
+            rf'.\quant_results\_{dataname[0]}\{qua}-{str(mod)[:6]}-{dataname[0]}-{dataname[1]}.csv').drop(
+            labels=['Unnamed: 0'], axis=1).to_numpy()
+        quantified_dsts = np.nan_to_num(quantified_dsts, nan=1 / len(c))
+
+    except IOError:
+        quantified_dsts = 0
+        if qua == 'DyS':
+            quantified_dsts = DyS_on_TSsets(valset, data_dict, mod, c)
+        elif qua == 'ACC':
+            quantified_dsts = ACC_on_TSsets(valset, data_dict, mod, c)
+        elif qua == 'GPAC':
+            quantified_dsts = GPAC_on_TSsets(valset, data_dict, mod, c)
+        elif qua == 'EDy':
+            quantified_dsts = EDy_on_TSsets(valset, data_dict, mod, c)
+        elif qua == 'CC':
+            quantified_dsts = CC_on_TSsets(data_dict, mod, c)
+        elif qua == 'ReadMe2':
+            df_quantified_dsts = pd.read_csv(f'./ReadMe_Implement/data/{dataname[0]}/seed{random_seed}/test_preds.csv')
+            quantified_dsts = np.array(df_quantified_dsts)
+
+        quantified_dsts = np.nan_to_num(quantified_dsts, nan=1 / len(c))
+
+        pd_quantified_dsts = {}
+        for i, cls in enumerate(c):
+            pd_quantified_dsts[cls] = quantified_dsts[:, i]
+        pd_quantified_dsts = pd.DataFrame(quantified_dsts)
+        dataset_folder = rf'.\quant_results\_{dataname[0]}'
+        if not os.path.exists(dataset_folder):
+            os.makedirs(dataset_folder)
+
+        pd_quantified_dsts.to_csv(dataset_folder+rf'\{qua}-{str(mod)[:6]}-{dataname[0]}.csv')
+
+    return quantified_dsts
+</file>
+
+<file path="project/quantifiers.py">
+import numpy as np
+import pandas as pd
+import cvxpy as cvx
+import quadprog
+from sklearn import metrics
+from sklearn.metrics.pairwise import manhattan_distances
+
+
+class Distances(object):
+
+    def __init__(self, P, Q):
+        if sum(P) < 1e-20 or sum(Q) < 1e-20:
+            raise "One or both vector are zero (empty)..."
+        if len(P) != len(Q):
+            raise "Arrays need to be of equal sizes..."
+        # use numpy arrays for efficient coding
+        P = np.array(P, dtype=float)
+        Q = np.array(Q, dtype=float)
+        # Correct for zero values
+        P[np.where(P < 1e-20)] = 1e-20
+        Q[np.where(Q < 1e-20)] = 1e-20
+        self.P = P
+        self.Q = Q
+
+    def sqEuclidean(self):
+        P = self.P
+        Q = self.Q
+        d = len(P)
+        return sum((P - Q) ** 2)
+
+    def probsymm(self):
+        P = self.P
+        Q = self.Q
+        d = len(P)
+        return 2 * sum((P - Q) ** 2 / (P + Q))
+
+    def topsoe(self):
+        P = self.P
+        Q = self.Q
+        return sum(P * np.log(2 * P / (P + Q)) + Q * np.log(2 * Q / (P + Q)))
+
+    def hellinger(self):
+        P = self.P
+        Q = self.Q
+        return 2 * np.sqrt(1 - sum(np.sqrt(P * Q)))
+
+
+def DyS_distance(sc_1, sc_2, measure):
+    dist = Distances(sc_1, sc_2)
+
+    if measure == 'topsoe':
+        return dist.topsoe()
+    elif measure == 'probsymm':
+        return dist.probsymm()
+    elif measure == 'hellinger':
+        return dist.hellinger()
+    else:
+        return 2
+
+
+def TernarySearch(left, right, f, eps=1e-4):
+    while True:
+        if abs(left - right) < eps:
+            return (left + right) / 2
+
+        leftThird = left + (right - left) / 3
+        rightThird = right - (right - left) / 3
+
+        if f(leftThird) > f(rightThird):
+            left = leftThird
+        else:
+            right = rightThird
+
+
+def getHist(scores, nbins):
+    breaks = np.linspace(0, 1, int(nbins) + 1)
+    breaks = np.delete(breaks, -1)
+    breaks = np.append(breaks, 1.1)
+
+    re = np.repeat(1 / (len(breaks) - 1), (len(breaks) - 1))
+    for i in range(1, len(breaks)):
+        re[i - 1] = (re[i - 1] + len(np.where((scores >= breaks[i - 1]) & (scores < breaks[i]))[0])) / (len(scores) + 1)
+    return re
+
+
+def ACC(pred_labels, tpr, fpr):
+    cc_ouput = round(pred_labels[pred_labels == 'True'].count() / len(pred_labels), 3)
+    diff_tpr_fpr = (float(tpr) - float(fpr))
+    one_prop = (cc_ouput - float(fpr)) / diff_tpr_fpr
+
+    if one_prop <= 0:  # clipping the output between [0,1]
+        pos_prop = 0
+    elif one_prop >= 1:
+        pos_prop = 1
+    else:
+        pos_prop = one_prop
+
+    return pos_prop
+
+
+def HDy(pos_scores, neg_scores, test_scores):
+    bin_size = np.linspace(10, 110, 11)  # creating bins from 10 to 110 with step size 10
+    alpha_values = [round(x, 2) for x in np.linspace(0, 1, 101)]
+
+    result = []
+    num_bins = []
+    for bins in bin_size:
+
+        p_bin_count = getHist(pos_scores, bins)
+        n_bin_count = getHist(neg_scores, bins)
+        te_bin_count = getHist(test_scores, bins)
+
+        vDist = []
+
+        for x in range(0, len(alpha_values), 1):
+            vDist.append(DyS_distance(((p_bin_count * alpha_values[x]) + (n_bin_count * (1 - alpha_values[x]))),
+                                           te_bin_count, measure="hellinger"))
+
+        result.append(alpha_values[np.argmin(vDist)])
+
+    pos_prop = round(np.median(result), 2)
+    return pos_prop
+
+
+def DyS(pos_scores, neg_scores, test_scores, measure='topsoe'):
+    bin_size = np.linspace(2, 20, 10)  # [10,20] range(10,111,10) #creating bins from 2 to 10 with step size 2
+    bin_size = np.append(bin_size, 30)
+
+    # print('bin_size', bin_size)
+    result = []
+    for bins in bin_size:
+        p_bin_count = getHist(pos_scores, bins)
+        n_bin_count = getHist(neg_scores, bins)
+        te_bin_count = getHist(test_scores, bins)
+
+        def f(x):
+            return DyS_distance(((p_bin_count * x) + (n_bin_count * (1 - x))), te_bin_count, measure=measure)
+
+        result.append(TernarySearch(0, 1, f))
+
+
+    pos_prop = round(np.median(result), 4)
+    return pos_prop
+
+
+def GAC(y_hat, train_labels, yt_hat, classes):
+    CM = metrics.confusion_matrix(train_labels, yt_hat, normalize="true").T
+
+    df_p_y_hat = pd.DataFrame({cls: [0] for cls in classes})
+    for pred_label in y_hat:
+        df_p_y_hat[pred_label][0] = df_p_y_hat[pred_label][0]+1
+    p_y_hat = df_p_y_hat.to_numpy()
+    p_y_hat = np.squeeze(p_y_hat / p_y_hat.sum())
+
+    p_hat = cvx.Variable(CM.shape[1])
+    constraints = [p_hat >= 0, cvx.sum(p_hat) == 1.0]
+    problem = cvx.Problem(cvx.Minimize(cvx.norm(CM @ p_hat - p_y_hat)), constraints)
+    problem.solve()
+    return p_hat.value
+
+
+def GPAC(train_scores, test_scores, train_labels, classes):
+
+    CM = np.zeros((len(classes), len(classes)))
+    for cls in classes:
+        idx = np.where(train_labels == cls)[0]
+        i = classes.index(cls)
+        CM[i] = np.sum(train_scores[idx], axis=0)
+        CM[i] /= np.sum(CM[i])
+    CM = CM.T
+    p_y_hat = np.sum(test_scores, axis=0)
+    p_y_hat = p_y_hat / np.sum(p_y_hat)
+
+    p_hat = cvx.Variable(CM.shape[1])
+    constraints = [p_hat >= 0, cvx.sum(p_hat) == 1.0]
+    problem = cvx.Problem(cvx.Minimize(cvx.norm(CM @ p_hat - p_y_hat)), constraints)
+    problem.solve()
+    return p_hat.value
+
+
+def EDy(tr_scores, labels, te_scores, classes):
+    distance = manhattan_distances
+    train_distrib_ = dict.fromkeys(classes)
+    train_n_cls_i_ = np.zeros((len(classes), 1))
+
+    if len(labels) == len(tr_scores):
+        y_ext_ = labels
+    else:
+        y_ext_ = np.tile(labels, len(tr_scores) // len(labels))
+
+    for n_cls, cls in enumerate(classes):
+        train_distrib_[cls] = tr_scores[y_ext_ == cls, :]
+        train_n_cls_i_[n_cls, 0] = len(train_distrib_[cls])
+
+    K_, G_, C_, b_ = compute_ed_param_train(distance, train_distrib_, classes, train_n_cls_i_)
+
+    a_ = compute_ed_param_test(distance, train_distrib_, te_scores, K_, classes, train_n_cls_i_)
+
+    prevalences = solve_ed(G=G_, a=a_, C=C_, b=b_)
+
+    return prevalences / np.sum(prevalences)
+
+
+def dpofa(m):
+    r = np.array(m, copy=True)
+    n = len(r)
+    for k in range(n):
+        s = 0.0
+        if k >= 1:
+            for i in range(k):
+                t = r[i, k]
+                if i > 0:
+                    t = t - np.sum(r[0:i, i] * r[0:i, k])
+                t = t / r[i, i]
+                r[i, k] = t
+                s = s + t * t
+        s = r[k, k] - s
+        if s <= 0.0:
+            return k+1, r
+        r[k, k] = np.sqrt(s)
+    return 0, r
+
+
+def nearest_pd(A):
+    B = (A + A.T) / 2
+    _, s, V = np.linalg.svd(B)
+
+    H = np.dot(V.T, np.dot(np.diag(s), V))
+
+    A2 = (B + H) / 2
+
+    A3 = (A2 + A2.T) / 2
+
+    if is_pd(A3):
+        return A3
+
+    spacing = np.spacing(np.linalg.norm(A))
+    indendity_matrix = np.eye(A.shape[0])
+    k = 1
+    while not is_pd(A3):
+        mineig = np.min(np.real(np.linalg.eigvals(A3)))
+        A3 += indendity_matrix * (-mineig * k ** 2 + spacing)
+        k += 1
+
+    return A3
+
+
+def is_pd(m):
+    return dpofa(m)[0] == 0
+
+
+def solve_ed(G, a, C, b):
+    sol = quadprog.solve_qp(G=G, a=a, C=C, b=b)
+    prevalences = sol[0]
+    # the last class was removed from the problem, its prevalence is 1 - the sum of prevalences for the other classes
+    return np.append(prevalences, 1 - prevalences.sum())
+
+
+def compute_ed_param_train(distance_func, train_distrib, classes, n_cls_i):
+    n_classes = len(classes)
+    #  computing sum de distances for each pair of classes
+    K = np.zeros((n_classes, n_classes))
+    for i in range(n_classes):
+        K[i, i] = distance_func(train_distrib[classes[i]], train_distrib[classes[i]]).sum()
+        for j in range(i + 1, n_classes):
+            K[i, j] = distance_func(train_distrib[classes[i]], train_distrib[classes[j]]).sum()
+            K[j, i] = K[i, j]
+
+    #  average distance
+    K = K / np.dot(n_cls_i, n_cls_i.T)
+
+    B = np.zeros((n_classes - 1, n_classes - 1))
+    for i in range(n_classes - 1):
+        B[i, i] = - K[i, i] - K[-1, -1] + 2 * K[i, -1]
+        for j in range(n_classes - 1):
+            if j == i:
+                continue
+            B[i, j] = - K[i, j] - K[-1, -1] + K[i, -1] + K[j, -1]
+
+    #  computing the terms for the optimization problem
+    G = 2 * B
+    if not is_pd(G):
+        G = nearest_pd(G)
+
+    C = -np.vstack([np.ones((1, n_classes - 1)), -np.eye(n_classes - 1)]).T
+    b = -np.array([1] + [0] * (n_classes - 1), dtype=float)
+
+    return K, G, C, b
+
+
+def compute_ed_param_test(distance_func, train_distrib, test_distrib, K, classes, n_cls_i):
+
+    n_classes = len(classes)
+    Kt = np.zeros(n_classes)
+    for i in range(n_classes):
+        Kt[i] = distance_func(train_distrib[classes[i]], test_distrib).sum()
+
+    Kt = Kt / (n_cls_i.squeeze() * float(len(test_distrib)))
+
+    a = 2 * (- Kt[:-1] + K[:-1, -1] + Kt[-1] - K[-1, -1])
+    return a
+
+
+def EMQ(test_scores, nclasses, p_tr):
+    max_it = 1000
+    eps = 1e-6
+
+    p_s = np.copy(p_tr)
+    p_cond_tr = np.array(test_scores)
+    p_cond_s = np.zeros(p_cond_tr.shape)
+
+    for it in range(max_it):
+        r = p_s / p_tr
+        p_cond_s = p_cond_tr * r
+        s = np.sum(p_cond_s, axis=1)
+        for c in range(nclasses):
+            p_cond_s[:, c] = p_cond_s[:, c] / s
+        p_s_old = np.copy(p_s)
+        p_s = np.sum(p_cond_s, axis=0) / p_cond_s.shape[0]
+        if (np.sum(np.abs(p_s - p_s_old)) < eps):
+            break
+
+    return p_s/np.sum(p_s)
+</file>
+
+<file path="project/time_series_adjustment.py">
+import numpy as np
+from pykalman import KalmanFilter
+
+
+def MovingAverage(initial_value, quantified_prevs, window):
+
+    ma_prevs = []
+    _ = np.hstack([initial_value, quantified_prevs])
+    for i in range(len(initial_value), len(quantified_prevs)+len(initial_value)):
+        if i >= window:
+            total = _[i]
+            for j in range(window):
+                total = total + _[i - j - 1]
+            ma_prevs.append(total / (window+1))
+        else:
+            ma_prevs.append(_[i])
+    return np.array(ma_prevs)
+
+
+def KalmanMA(initial_value, observations, qtfy_error, state_dim, q):
+
+    _ = np.hstack([initial_value, observations])
+    states_observed = []
+    for i in range(state_dim, len(_)+1):
+        state = [_[i+j-state_dim] for j in range(state_dim)]
+        states_observed.append(state)
+    states_observed = np.array(states_observed)
+
+    initial_window = np.array(states_observed)[0]
+
+    A = np.vstack([
+                   np.hstack([np.zeros((state_dim-1, 1)), np.eye(state_dim-1)]),
+                   np.array([1/state_dim for i in range(state_dim)])
+                  ])
+    Q = q * np.eye(state_dim)
+    H = np.eye(state_dim)
+    R = qtfy_error * np.eye(state_dim)
+
+    kf = KalmanFilter(
+        initial_state_mean=initial_window,
+        initial_state_covariance=R,
+        transition_matrices=A,
+        transition_covariance=Q,
+        observation_matrices=H,
+        observation_covariance=R,
+    )
+
+    pred_state, state_cov = kf.filter(states_observed)
+    pred_temp = pred_state[1:, -1]
+    final_pred_state = np.hstack([initial_window, pred_temp])[len(initial_value):]
+    return final_pred_state
+
+
+def TimeSeriesAdjustment(observed_series, init_value, window_set, method, inf_val, classes):
+
+    modified_dsts = []
+    if method == 'MA':
+        for index in range(len(classes)):
+            modified_prevs = MovingAverage(initial_value=init_value[:, index],
+                                           quantified_prevs=observed_series[:, index],
+                                           window=max(window_set))
+            modified_dsts.append(modified_prevs)
+
+    elif method == 'KFMA':
+        val_mse = inf_val[2]
+        q = 10 ** (-2.5)
+        for index in range(len(classes)):
+            modified_prevs = KalmanMA(initial_value=init_value[:, index],
+                                      observations=observed_series[:, index],
+                                      qtfy_error=val_mse,
+                                      state_dim=max(window_set),
+                                      q=q
+                                      )
+            modified_dsts.append(modified_prevs)
+
+    modified_dsts = np.array(modified_dsts).T
+    modified_dsts = modified_dsts / (np.sum(modified_dsts, axis=1).reshape(-1, 1))
+    return modified_dsts
+</file>
+
+<file path="project/utils.py">
+import numpy as np
+import pandas as pd
+from time_series_adjustment import KalmanMA
+
+
+def mae(arr1, arr2):
+    AEs = np.mean(abs(arr1 - arr2), axis=1)
+    MAE = AEs.sum() / len(arr1)
+
+    return MAE
+
+
+def mse(arr1, arr2):
+    SEs = np.mean((arr1 - arr2)**2, axis=1)
+    MSE = SEs.sum() / len(arr1)
+
+    return MSE
+
+
+def val_test_split(data, prevalences, val_length):
+    if val_length == 0:
+        return pd.DataFrame(), data, prevalences
+
+    else:
+        validation_set = data[0]
+        del data[0]
+        for i in range(1, val_length):
+            validation_set = pd.concat([validation_set, data[i]], ignore_index=True)
+            del data[i]
+
+        test_sets = {}
+        for i in range(len(data)):
+            test_sets[i] = data[i+val_length]
+        del data
+
+        test_prevalences = prevalences.iloc[val_length:, :].copy().reset_index(drop=True)
+
+        return validation_set, test_sets, test_prevalences
+
+
+def ternary_search_1d(f, left, right, eps=1e-4):
+
+    while True:
+        if abs(left - right) < eps:
+            argmin = (left + right) / 2
+            return f(argmin), argmin
+
+        leftThird = left + (right - left) / 3
+        rightThird = right - (right - left) / 3
+
+        if f(leftThird) > f(rightThird):
+            left = leftThird
+        else:
+            right = rightThird
+
+
+def ternary_search_2d(func, left_x, right_x, left_y, right_y, epsilon=1e-6):
+
+    while (right_x - left_x > epsilon) or (right_y - left_y > epsilon):
+        third_x = left_x + (right_x - left_x) / 3
+        third_y = left_y + (right_y - left_y) / 3
+        f_third = func(third_x, third_y)
+
+        two_third_x = right_x - (right_x - left_x) / 3
+        two_third_y = right_y - (right_y - left_y) / 3
+        f_two_third = func(two_third_x, two_third_y)
+
+        if f_third < f_two_third:
+            right_x = two_third_x
+            right_y = two_third_y
+        else:
+            left_x = third_x
+            left_y = third_y
+
+    x_min = (left_x + right_x) / 2
+    y_min = (left_y + right_y) / 2
+    min_value = func(x_min, y_min)
+
+    return min_value, x_min, y_min
+
+
+def params_KFMA(val, val_mse):
+    init_value, val_observed, val_true, classes, window = val[0], val[1], val[2], val[3], val[4]
+    low = -4
+    upper = -1
+
+    def maeKFMA(_q):
+        q = 10**_q
+        modified_dsts = []
+        for index in range(len(classes)):
+            modified_prevs = KalmanMA(initial_value=init_value[:, index],
+                                      observations=val_observed[:, index],
+                                      qtfy_error=val_mse,
+                                      state_dim=window,
+                                      q=q
+                                      )
+            modified_dsts.append(modified_prevs)
+        modified_dsts = np.array(modified_dsts).T
+        modified_dsts = modified_dsts / (np.sum(modified_dsts, axis=1).reshape(-1, 1))
+        MAE = mae(val_true, modified_dsts)
+        return MAE
+
+    return ternary_search_1d(maeKFMA, low, upper)
+</file>
+
+<file path="time series qua/bike_sharing_dataset/Readme.txt">
+==========================================
+Bike Sharing Dataset
+==========================================
+
+Hadi Fanaee-T
+
+Laboratory of Artificial Intelligence and Decision Support (LIAAD), University of Porto
+INESC Porto, Campus da FEUP
+Rua Dr. Roberto Frias, 378
+4200 - 465 Porto, Portugal
+
+
+=========================================
+Background 
+=========================================
+
+Bike sharing systems are new generation of traditional bike rentals where whole process from membership, rental and return 
+back has become automatic. Through these systems, user is able to easily rent a bike from a particular position and return 
+back at another position. Currently, there are about over 500 bike-sharing programs around the world which is composed of 
+over 500 thousands bicycles. Today, there exists great interest in these systems due to their important role in traffic, 
+environmental and health issues. 
+
+Apart from interesting real world applications of bike sharing systems, the characteristics of data being generated by
+these systems make them attractive for the research. Opposed to other transport services such as bus or subway, the duration
+of travel, departure and arrival position is explicitly recorded in these systems. This feature turns bike sharing system into
+a virtual sensor network that can be used for sensing mobility in the city. Hence, it is expected that most of important
+events in the city could be detected via monitoring these data.
+
+=========================================
+Data Set
+=========================================
+Bike-sharing rental process is highly correlated to the environmental and seasonal settings. For instance, weather conditions,
+precipitation, day of week, season, hour of the day, etc. can affect the rental behaviors. The core data set is related to  
+the two-year historical log corresponding to years 2011 and 2012 from Capital Bikeshare system, Washington D.C., USA which is 
+publicly available in http://capitalbikeshare.com/system-data. We aggregated the data on two hourly and daily basis and then 
+extracted and added the corresponding weather and seasonal information. Weather information are extracted from http://www.freemeteo.com. 
+
+=========================================
+Associated tasks
+=========================================
+
+	- Regression: 
+		Predication of bike rental count hourly or daily based on the environmental and seasonal settings.
+	
+	- Event and Anomaly Detection:  
+		Count of rented bikes are also correlated to some events in the town which easily are traceable via search engines.
+		For instance, query like "2012-10-30 washington d.c." in Google returns related results to Hurricane Sandy. Some of the important events are 
+		identified in [1]. Therefore the data can be used for validation of anomaly or event detection algorithms as well.
+
+
+=========================================
+Files
+=========================================
+
+	- Readme.txt
+	- hour.csv : bike sharing counts aggregated on hourly basis. Records: 17379 hours
+	- day.csv - bike sharing counts aggregated on daily basis. Records: 731 days
+
+	
+=========================================
+Dataset characteristics
+=========================================	
+Both hour.csv and day.csv have the following fields, except hr which is not available in day.csv
+	
+	- instant: record index
+	- dteday : date
+	- season : season (1:springer, 2:summer, 3:fall, 4:winter)
+	- yr : year (0: 2011, 1:2012)
+	- mnth : month ( 1 to 12)
+	- hr : hour (0 to 23)
+	- holiday : weather day is holiday or not (extracted from http://dchr.dc.gov/page/holiday-schedule)
+	- weekday : day of the week
+	- workingday : if day is neither weekend nor holiday is 1, otherwise is 0.
+	+ weathersit : 
+		- 1: Clear, Few clouds, Partly cloudy, Partly cloudy
+		- 2: Mist + Cloudy, Mist + Broken clouds, Mist + Few clouds, Mist
+		- 3: Light Snow, Light Rain + Thunderstorm + Scattered clouds, Light Rain + Scattered clouds
+		- 4: Heavy Rain + Ice Pallets + Thunderstorm + Mist, Snow + Fog
+	- temp : Normalized temperature in Celsius. The values are divided to 41 (max)
+	- atemp: Normalized feeling temperature in Celsius. The values are divided to 50 (max)
+	- hum: Normalized humidity. The values are divided to 100 (max)
+	- windspeed: Normalized wind speed. The values are divided to 67 (max)
+	- casual: count of casual users
+	- registered: count of registered users
+	- cnt: count of total rental bikes including both casual and registered
+	
+=========================================
+License
+=========================================
+Use of this dataset in publications must be cited to the following publication:
+
+[1] Fanaee-T, Hadi, and Gama, Joao, "Event labeling combining ensemble detectors and background knowledge", Progress in Artificial Intelligence (2013): pp. 1-15, Springer Berlin Heidelberg, doi:10.1007/s13748-013-0040-3.
+
+@article{
+	year={2013},
+	issn={2192-6352},
+	journal={Progress in Artificial Intelligence},
+	doi={10.1007/s13748-013-0040-3},
+	title={Event labeling combining ensemble detectors and background knowledge},
+	url={http://dx.doi.org/10.1007/s13748-013-0040-3},
+	publisher={Springer Berlin Heidelberg},
+	keywords={Event labeling; Event detection; Ensemble learning; Background knowledge},
+	author={Fanaee-T, Hadi and Gama, Joao},
+	pages={1-15}
+}
+
+=========================================
+Contact
+=========================================
+	
+For further information about this dataset please contact Hadi Fanaee-T (hadi.fanaee@fe.up.pt)
+</file>
+
+<file path=".gitignore">
+__pycache__/
+*.py[cod]
+*$py.class
+
+.vscode/
+</file>
+
+<file path="project/ReadMe_Implement/readCSV.R">
+library(readme)
+library(tensorflow)
+
+
+datasets = list(
+  'global_covid19_tweets',
+  'nepali_dataset_eng',              
+  'Apple-Twitter-Sentiment-DFE'
+  )
+
+seeds = list(
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10
+  )
+
+
+for (s in seeds) {
+  print(paste0("++++++++++++++++++++++++++++++++++++++++++++++seed", s, "++++++++++++++++++++++++++++++++++++++++++++++"))
+  for (dataname in datasets) {
+    print(paste0("----------------------------", dataname, "----------------------------"))
+    seed_path = file.path("data", dataname, paste0("seed", s))
+    if (!file.exists(seed_path)) {
+      dir.create(seed_path)
+    }
+    
+    val_preds <- data.frame(matrix(ncol = 3, nrow = 0))
+    colnames(val_preds) <- c("-1", "0", "1")
+    i = 0
+    repeat {
+      print(paste("...................val", i, "..................."))
+      file_name = paste0(format(i), ".csv")  # Build file name
+      
+      relative_path <- file.path("data", dataname, "val", file_name)
+      
+      if(!file.exists(relative_path)) {
+        break
+      }
+      data_t = read.csv(relative_path)
+      # a = data_t["TEXT"]
+      # print(a)
+      data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+      
+      # Estimate category proportions
+      wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+      set.seed(s) # Set a seed if you choose
+      readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+      
+      # Output proportions estimate
+      val_pred = readme.estimates$point_readme
+      val_preds <- rbind(val_preds, val_pred)  # Adding new rows to a DataFrame
+      # print(val_pred)
+      
+      # # Compare to the truth
+      # true = table(data_t$TRUTH[data_t$TRAININGSET == 0])/sum(table((data_t$TRUTH[data_t$TRAININGSET == 0])))
+      # print(true)
+      
+      i = i+1
+    }
+    write.csv(val_preds, file.path(seed_path, "val_preds.csv"), row.names = FALSE)
+    
+    
+    test_preds <- data.frame(matrix(ncol = 3, nrow = 0))
+    colnames(test_preds) <- c("-1", "0", "1")
+    j = 0
+    repeat {
+      print(paste("...................test", j, "..................."))
+      file_name = paste0(format(j), ".csv")  # Build file name
+      
+      relative_path <- file.path("data", dataname, "test", file_name)
+      
+      if(!file.exists(relative_path)) {
+        break
+      }
+      data_t = read.csv(relative_path)
+      # a = data_t["TEXT"]
+      # print(a)
+      data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+      
+      # Estimate category proportions
+      wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+      set.seed(s) # Set a seed if you choose
+      readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+      
+      # Output proportions estimate
+      test_pred = readme.estimates$point_readme
+      test_preds <- rbind(test_preds, test_pred)  # Adding new rows to a DataFrame
+      # print(test_preds)
+      
+      # # Compare to the truth
+      # true = table(data_t$TRUTH[data_t$TRAININGSET == 0])/sum(table((data_t$TRUTH[data_t$TRAININGSET == 0])))
+      # print(true)
+      
+      j = j+1
+    } 
+    write.csv(test_preds, file.path(seed_path, "test_preds.csv"), row.names = FALSE)
+  }
+  
+}
+</file>
+
+<file path="project/ReadMe_Implement/readme2_csv.R">
+library(readme)
+library(tensorflow)
+
+
+readme2 <- function(data_t, seed_) {
+  
+  data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+  
+  wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+  
+  # Estimate category proportions
+  set.seed(seed_) # Set a seed if you choose
+  readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+  
+  # Output proportions estimate
+  qua_prev = readme.estimates$point_readme
+  
+  # # Compare to the truth
+  # true = table(data_t$TRUTH[data_t$TRAININGSET == 0])/sum(table((data_t$TRUTH[data_t$TRAININGSET == 0])))
+  prev_df <- as.data.frame(t(qua_prev))
+  write.csv(prev_df, file = "prev.csv", row.names = FALSE)
+  
+  return(qua_prev)
+}
+
+
+
+# dataname = 'global_covid19_tweets'
+# file_name = paste0(format(0), ".csv")
+# relative_path = file.path("data", dataname, file_name)
+
+datat = read.csv("0.csv")
+seed = 1
+prev = readme2(datat, seed)
+</file>
+
+<file path="project/ReadMe_Implement/ReadMe2.R">
+library(readme)
+library(tensorflow)
+
+
+readme2 <- function(data_t, seed_) {
+# readme2 <- function() {
+  
+  data_t = read.csv("0.csv")
+  seed_ = 1
+  
+  data_t[["TEXT"]] <- gsub("\\0", "", data_t[["TEXT"]])
+
+  wordVec_summaries = undergrad(documentText = cleanme(data_t$TEXT), wordVecs = NULL)
+  
+  # Estimate category proportions
+  set.seed(seed_) # Set a seed if you choose
+  readme.estimates <- readme(dfm = wordVec_summaries , labeledIndicator = data_t$TRAININGSET, categoryVec = data_t$TRUTH)
+  
+  # Output proportions estimate
+  qua_prev = readme.estimates$point_readme
+  
+  prev_df <- as.data.frame(t(qua_prev))
+  print(prev_df)
+  write.csv(prev_df, file = "prev.csv", row.names = FALSE)
+
+  # return(qua_prev)
+}
+
+
+
+# dataname = 'global_covid19_tweets'
+# file_name = paste0(format(0), ".csv")
+# relative_path = file.path("data", dataname, file_name)
+# 
+# datat = read.csv("0.csv")
+# seed = 1
+readme2(datat, seed)
+# # prev = readme2(datat, seed)
+# # print(prev)
+</file>
+
+<file path="project/data_loading.py">
+import pandas as pd
+import numpy as np
+import chardet
+from io import BytesIO
+from zipfile import ZipFile
+import urllib.request
+from utils import val_test_split
+
+
+def count_median(datadict):
+    count_median = []
+    for i in datadict:
+        count_median.append(len(datadict[i]))
+    median_size = np.median(np.array(count_median))
+    return int(median_size)
+
+
+def nepali_dataset_eng():
+    df1 = pd.read_csv(r'../time series qua/Nepali_dataset_Eng.csv')
+    df1 = df1.drop(labels=['Unnamed: 0', 'Tweet', 'Tokanize_tweet'], axis=1)
+    neworder = ['Label', 'Tweet_en', 'Datetime']
+    df1 = df1.reindex(columns=neworder)
+    df1 = df1.rename(columns={'Label': 'label', 'Tweet_en': 'text'})
+    df1 = df1[df1['label'].isin([-1, 0, 1])]
+    num = df1['Datetime'].value_counts()
+    sort_Num = num.sort_index()
+    dates = sort_Num.index.values.tolist()
+    nums = np.array(sort_Num.values.tolist())
+
+    data_dict = {}
+    pos_nums = []
+    for i in range(len(dates)):
+        data_dict[i] = df1[df1['Datetime'] == dates[i]].copy()  # split datasets by time
+        pos_num = df1[(df1['Datetime'] == dates[i]) & (df1['label'] == 1)]['Datetime'].count()
+        pos_nums.append(pos_num)
+    pos_prevs = pos_nums / nums
+
+    neg_nums = []
+    for i in range(len(dates)):
+        neg_num = df1[(df1['Datetime'] == dates[i]) & (df1['label'] == -1)]['Datetime'].count()
+        neg_nums.append(neg_num)
+    neg_prevs = neg_nums / nums
+
+    neu_prevs = 1 - (pos_prevs + neg_prevs)
+
+    prevalence_df = pd.DataFrame({-1: neg_prevs, 0: neu_prevs, 1: pos_prevs})
+
+    return data_dict, prevalence_df, [-1, 0, 1], count_median(data_dict)
+
+
+def global_covid19_tweets():
+    training_set = r'../time series qua/global_covid19_tweets/global_covid19_tweets/Corona_NLP_train.csv'
+    test_set = r'../time series qua/global_covid19_tweets/global_covid19_tweets/Corona_NLP_test.csv'
+    df = pd.read_csv(training_set)
+    df_test = pd.read_csv(test_set)
+    df1 = pd.concat([df_test, df])
+    df1 = df1.drop(labels=['UserName', 'ScreenName', 'Location'], axis=1)
+    neworder = ['Sentiment', 'OriginalTweet', 'TweetAt']
+    df1 = df1.reindex(columns=neworder)
+    df1.loc[df1['Sentiment'] == 'Extremely Positive', 'Sentiment'] = 1
+    df1.loc[df1['Sentiment'] == 'Extremely Negative', 'Sentiment'] = -1
+    df1.loc[df1['Sentiment'] == 'Positive', 'Sentiment'] = 1
+    df1.loc[df1['Sentiment'] == 'Negative', 'Sentiment'] = -1
+    df1.loc[df1['Sentiment'] == 'Neutral', 'Sentiment'] = 0
+    df1 = df1[df1['Sentiment'].isin([0, 1, -1])]
+    df1 = df1.rename(columns={'Sentiment': 'label', 'OriginalTweet': 'text'})
+    df1['TweetAt'] = df1['TweetAt'].str.split('-').str[1] + '-' + df1['TweetAt'].str.split('-').str[0]
+
+    num = df1['TweetAt'].value_counts()
+    sort_Num = num.sort_index()
+    dates = sort_Num.index.values.tolist()
+    nums = sort_Num.values.tolist()
+    nums0 = np.array(nums)
+
+    data_dict = {}
+    pos_nums = []
+    for i in range(len(dates)):
+        data_dict[i] = df1[df1['TweetAt'] == dates[i]].copy()  # split datasets by time
+        pos_num = df1[(df1['TweetAt'] == dates[i]) & (df1['label'] == 1)]['TweetAt'].count()
+        pos_nums.append(pos_num)
+    pos_prevs = pos_nums / nums0
+
+    neg_nums = []
+    for i in range(len(dates)):
+        neg_num = df1[(df1['TweetAt'] == dates[i]) & (df1['label'] == -1)]['TweetAt'].count()
+        neg_nums.append(neg_num)
+    neg_prevs = neg_nums / nums0
+
+    neu_prevs = 1 - (pos_prevs + neg_prevs)
+
+    prevalence_df = pd.DataFrame({-1: neg_prevs, 0: neu_prevs, 1: pos_prevs})
+
+    return data_dict, prevalence_df, [-1, 0, 1], count_median(data_dict)
+
+
+def Apple_Twitter_Sentiment_DFE():
+    with open(r'../time series qua/Apple-Twitter-Sentiment-DFE.csv', 'rb') as f:
+        enc = chardet.detect(f.read())
+    df = pd.read_csv(r'../time series qua/Apple-Twitter-Sentiment-DFE.csv', encoding=enc['encoding'])
+    df1 = df.drop(labels=['_unit_id',
+                          '_golden',
+                          '_unit_state',
+                          '_trusted_judgments',
+                          '_last_judgment_at',
+                          'sentiment:confidence',
+                          'id',
+                          'query',
+                          'sentiment_gold'], axis=1)
+    df1 = df1[df1['sentiment'].isin(['1', '3', '5'])]
+
+    df1['date'] = df1['date'].str[:13]
+    df1['date'] = (df1['date'].str.split(' ').str[2].astype(int) * 24 +
+                   df1['date'].str.split(' ').str[3].astype(int) - 43) // 6
+    neworder = ['sentiment', 'text', 'date']
+    df1 = df1.reindex(columns=neworder)
+    df1.loc[df1['sentiment'] == '5', 'sentiment'] = 1
+    df1.loc[df1['sentiment'] == '3', 'sentiment'] = -1
+    df1.loc[df1['sentiment'] == '1', 'sentiment'] = 0
+    df1 = df1.rename(columns={'sentiment': 'label'})
+
+    num = df1['date'].value_counts()
+    sort_Num = num.sort_index()
+
+    dates = sort_Num.index.tolist()
+
+    nums = sort_Num.values.tolist()
+    nums0 = np.array(nums)
+
+    '''
+    Prevalence of positives
+    '''
+    data_dict = {}
+    pos_nums = []
+    for i in range(len(dates)):
+        data_dict[i] = df1[df1['date'] == dates[i]].copy()  # split datasets by time
+        pos_num = df1[(df1['date'] == dates[i]) & (df1['label'] == 1)]['date'].count()
+        pos_nums.append(pos_num)
+    pos_prevs = pos_nums / nums0
+
+    '''
+    Prevalence of negatives
+    '''
+    neg_nums = []
+    for i in range(len(dates)):
+        neg_num = df1[(df1['date'] == dates[i]) & (df1['label'] == -1)]['date'].count()
+        neg_nums.append(neg_num)
+    neg_prevs = neg_nums / nums0
+
+    '''
+    prevalence of neutrals
+    '''
+    neu_prevs = 1 - (pos_prevs + neg_prevs)
+
+    '''
+    collect prevalence of all labels
+    '''
+    prevalence_df = pd.DataFrame({-1: neg_prevs, 0: neu_prevs, 1: pos_prevs})
+
+    return data_dict, prevalence_df, [-1, 0, 1], count_median(data_dict)
+
+
+def bike():
+    training_size = 38
+    # url = urllib.request.urlopen(
+    #     "https://archive.ics.uci.edu/ml/machine-learning-databases/00275/Bike-Sharing-Dataset.zip")
+    #
+    # my_zip_file = ZipFile(BytesIO(url.read()))
+    # print(my_zip_file.namelist())
+    # f = my_zip_file.namelist()[2]
+    f = r'../time series qua/bike_sharing_dataset/hour.csv'
+    dta = pd.read_csv(f, header=0, skipinitialspace=True)
+    dta = dta.drop(["instant", "casual", "registered"], axis=1)
+    dta = pd.get_dummies(dta, columns=["season", "yr", "mnth", "hr", "weekday", "weathersit"])
+
+    bins = [0, 100, 1000]
+    labels = [0, 1]
+    dta['cnt'] = pd.cut(dta['cnt'], bins=bins, labels=labels)
+    dta['cnt'] = dta['cnt'].astype("int64")
+    dta = dta.rename(columns={'cnt': 'label'})
+
+    binned = False
+    if binned:
+        for col in list(dta)[2:6]:
+            dta[col] = pd.qcut(dta[col], q=4, labels=False, duplicates='drop')
+            dta[col] = dta[col].astype("int64")
+
+    num = dta['dteday'].value_counts()
+    dates = num.sort_index().index.values.tolist()
+
+    x = 2
+    df_date_index = dta.copy()
+    for i, date in enumerate(dates):
+        df_date_index.loc[df_date_index['dteday'] == date, 'dteday'] = i // x
+
+    _ = df_date_index['dteday'].value_counts().sort_index()
+    timestamps = _.index.values.tolist()
+    amounts = np.array(_.values.tolist())
+
+    data_dict = {}
+    pos_nums = []
+    for i, t in enumerate(timestamps):
+        data_dict[i] = df_date_index[df_date_index['dteday'] == t].copy()
+        del data_dict[i]['dteday']
+
+        pos_num = df_date_index[(df_date_index['dteday'] == t) & (df_date_index['label'] == 1)]['dteday'].count()
+        pos_nums.append(pos_num)
+    pos_nums = np.array(pos_nums)
+    pos_prevs = pos_nums / amounts
+
+    prevalence_df = pd.DataFrame({0: 1 - pos_prevs, 1: pos_prevs})
+    training_data, ts_data_dict, ts_prevalence = val_test_split(data_dict.copy(), prevalence_df, training_size)
+    training_data = training_data.sample(frac=1.0, replace=False, random_state=42).reset_index(drop=True)
+
+    return training_data, ts_data_dict, ts_prevalence, [0, 1], None
+
+
+def energy():
+    training_size = 15
+    url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00374/energydata_complete.csv"
+
+    dta = pd.read_csv(url, header=0, skipinitialspace=True)
+    dta = dta.drop(["rv1", "rv2"], axis=1)
+    dta.Appliances.describe()
+
+    bins = [0, 50, 100, 2000]
+    labels = [-1, 0, 1]
+    dta['Appliances'] = pd.cut(dta['Appliances'], bins=bins, labels=labels)
+    dta['Appliances'] = dta['Appliances'].astype("int64")
+    dta = dta.rename(columns={'Appliances': 'label'})
+
+    binned = False
+    if binned:
+        for col in list(dta)[1:]:
+            dta[col] = pd.qcut(dta[col], q=4, labels=False, duplicates='drop')
+            dta[col] = dta[col].astype("int64")
+
+    dta['date'] = dta['date'].str[:10]
+    _ = dta['date'].value_counts().sort_index()
+
+    timestamps = _.index.values.tolist()
+    amounts = np.array(_.values.tolist())
+
+    data_dict = {}
+    pos_nums = []
+    for i, t in enumerate(timestamps):
+        data_dict[i] = dta[dta['date'] == t].copy()
+        del data_dict[i]['date']
+
+        pos_num = dta[(dta['date'] == t) & (dta['label'] == 1)]['date'].count()
+        pos_nums.append(pos_num)
+    pos_nums = np.array(pos_nums)
+    pos_prevs = pos_nums / amounts
+
+    neg_nums = []
+    for i, t in enumerate(timestamps):
+        neg_num = dta[(dta['date'] == t) & (dta['label'] == -1)]['date'].count()
+        neg_nums.append(neg_num)
+    neg_prevs = neg_nums / amounts
+
+    neu_prevs = 1 - (pos_prevs + neg_prevs)
+
+    prevalence_df = pd.DataFrame({-1: neg_prevs, 0: neu_prevs, 1: pos_prevs})
+    training_data, ts_data_dict, ts_prevalence = val_test_split(data_dict.copy(), prevalence_df, training_size)
+    training_data = training_data.sample(frac=1.0, replace=False, random_state=42).reset_index(drop=True)
+
+    return training_data, ts_data_dict, ts_prevalence, [-1, 0, 1], None
+
+
+def news():
+    training_size = 21
+    url = urllib.request.urlopen(
+        "https://archive.ics.uci.edu/ml/machine-learning-databases/00332/OnlineNewsPopularity.zip")
+
+    my_zip_file = ZipFile(BytesIO(url.read()))
+    dta_file = my_zip_file.namelist()[2]
+
+    dta = pd.read_csv(my_zip_file.open(dta_file), skipinitialspace=True)
+    dta = dta.drop(columns="url")
+
+    bins = [0, 1000, 1000000]
+    labels = [0, 1]
+    dta['shares'] = pd.cut(dta['shares'], bins=bins, labels=labels)
+    dta['shares'] = dta['shares'].astype("int64")
+    dta = dta.rename(columns={'shares': 'label'})
+
+    binned = False
+    if binned:
+        qcols = ['timedelta',
+                 'n_tokens_title',
+                 'n_tokens_content',
+                 'n_unique_tokens',
+                 'n_non_stop_words',
+                 'n_non_stop_unique_tokens',
+                 'num_hrefs',
+                 'num_self_hrefs',
+                 'num_imgs',
+                 'num_videos',
+                 'average_token_length',
+                 'num_keywords',
+                 'kw_min_min',
+                 'kw_max_min',
+                 'kw_avg_min',
+                 'kw_min_max',
+                 'kw_max_max',
+                 'kw_avg_max',
+                 'kw_min_avg',
+                 'kw_max_avg',
+                 'kw_avg_avg',
+                 'self_reference_min_shares',
+                 'self_reference_max_shares',
+                 'self_reference_avg_sharess',
+                 'LDA_00',
+                 'LDA_01',
+                 'LDA_02',
+                 'LDA_03',
+                 'LDA_04',
+                 'global_subjectivity',
+                 'global_sentiment_polarity',
+                 'global_rate_positive_words',
+                 'global_rate_negative_words',
+                 'rate_positive_words',
+                 'rate_negative_words',
+                 'avg_positive_polarity',
+                 'min_positive_polarity',
+                 'max_positive_polarity',
+                 'avg_negative_polarity',
+                 'min_negative_polarity',
+                 'max_negative_polarity',
+                 'title_subjectivity',
+                 'title_sentiment_polarity',
+                 'abs_title_subjectivity',
+                 'abs_title_sentiment_polarity']
+        for col in qcols:
+            dta[col] = pd.qcut(dta[col], q=4, labels=False, duplicates='drop')
+            dta[col] = dta[col].astype("int64")
+
+    num = dta['timedelta'].value_counts()
+    dates = num.sort_index().index.values.tolist()
+
+    x = 3
+    df_date_index = dta.copy()
+    for i, date in enumerate(dates):
+        df_date_index.loc[df_date_index['timedelta'] == date, 'timedelta'] = i // x
+
+    _ = df_date_index['timedelta'].value_counts().sort_index()
+    timestamps = _.index.values.tolist()
+    amounts = np.array(_.values.tolist())
+
+    data_dict = {}
+    pos_nums = []
+    for i, t in enumerate(timestamps):
+        data_dict[i] = df_date_index[df_date_index['timedelta'] == t].copy()
+        del data_dict[i]['timedelta']
+
+        pos_num = df_date_index[(df_date_index['timedelta'] == t) & (df_date_index['label'] == 1)]['timedelta'].count()
+        pos_nums.append(pos_num)
+    pos_nums = np.array(pos_nums)
+    pos_prevs = pos_nums / amounts
+
+    prevalence_df = pd.DataFrame({0: 1 - pos_prevs, 1: pos_prevs})
+    training_data, ts_data_dict, ts_prevalence = val_test_split(data_dict.copy(), prevalence_df, training_size)
+    training_data = training_data.sample(frac=1.0, replace=False, random_state=42).reset_index(drop=True)
+
+    return training_data, ts_data_dict, ts_prevalence, [0, 1], None
+
+
+def loading(dataname):
+
+    if dataname == 'nepali_dataset_eng':
+        return nepali_dataset_eng()
+
+    elif dataname == 'global_covid19_tweets':
+        return global_covid19_tweets()
+
+    elif dataname == 'Apple-Twitter-Sentiment-DFE':
+        return Apple_Twitter_Sentiment_DFE()
+
+    elif dataname == 'bike':
+        return bike()
+
+    elif dataname == 'energy':
+        return energy()
+
+    elif dataname == 'news':
+        return news()
+</file>
+
+<file path="requirements.yaml">
+name: qot
+channels:
+  - defaults
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+  - https://repo.anaconda.com/pkgs/msys2
+dependencies:
+  - bzip2=1.0.8
+  - ca-certificates=2025.12.2
+  - expat=2.7.4
+  - libexpat=2.7.4
+  - libffi=3.4.4
+  - libzlib=1.3.1
+  - openssl=3.5.5
+  - pip=26.0.1
+  - python=3.10.19
+  - setuptools=80.10.2
+  - sqlite=3.51.1
+  - tk=8.6.15
+  - ucrt=10.0.22621.0
+  - vc=14.3
+  - vc14_runtime=14.44.35208
+  - vs2015_runtime=14.44.35208
+  - wheel=0.46.3
+  - xz=5.6.4
+  - zlib=1.3.1
+  - pip:
+      - anyio==3.6.2
+      - argon2-cffi==21.3.0
+      - argon2-cffi-bindings==21.2.0
+      - arrow==1.2.3
+      - asttokens==2.2.1
+      - attrs==22.2.0
+      - backcall==0.2.0
+      - beautifulsoup4==4.11.2
+      - bleach==6.0.0
+      - certifi==2022.12.7
+      - cffi==1.15.1
+      - chardet==6.0.0.post1
+      - charset-normalizer==3.1.0
+      - clarabel==0.11.1
+      - colorama==0.4.6
+      - comm==0.1.2
+      - contourpy==1.3.2
+      - cvxpy==1.7.5
+      - cycler==0.12.1
+      - debugpy==1.6.6
+      - decorator==5.1.1
+      - defusedxml==0.7.1
+      - docopt==0.6.2
+      - executing==1.2.0
+      - fastjsonschema==2.16.2
+      - filelock==3.9.0
+      - fonttools==4.61.1
+      - fqdn==1.5.1
+      - huggingface-hub==0.13.1
+      - idna==3.4
+      - importlib-metadata==6.0.0
+      - ipykernel==6.21.2
+      - ipython==8.12.3
+      - ipython-genutils==0.2.0
+      - ipywidgets==8.0.4
+      - isoduration==20.11.0
+      - jedi==0.18.2
+      - jinja2==3.1.2
+      - joblib==1.5.3
+      - jsonpointer==2.3
+      - jsonschema==4.17.3
+      - jupyter==1.0.0
+      - jupyter-client==8.0.3
+      - jupyter-console==6.6.1
+      - jupyter-core==5.2.0
+      - jupyter-events==0.6.3
+      - jupyter-server==2.3.0
+      - jupyter-server-terminals==0.4.4
+      - jupyterlab-pygments==0.2.2
+      - jupyterlab-widgets==3.0.5
+      - kiwisolver==1.4.9
+      - lightgbm==4.6.0
+      - markupsafe==2.1.2
+      - matplotlib==3.10.8
+      - matplotlib-inline==0.1.6
+      - mistune==2.0.5
+      - nbclassic==0.5.2
+      - nbclient==0.7.2
+      - nbconvert==7.16.4
+      - nbformat==5.7.3
+      - nest-asyncio==1.5.6
+      - notebook==6.5.2
+      - notebook-shim==0.2.2
+      - numpy==1.24.2
+      - osqp==1.1.1
+      - packaging==23.0
+      - pandas==2.3.3
+      - pandocfilters==1.5.0
+      - parso==0.8.3
+      - pickleshare==0.7.5
+      - pillow==9.4.0
+      - pipreqs==0.5.0
+      - platformdirs==3.0.0
+      - prometheus-client==0.16.0
+      - prompt-toolkit==3.0.48
+      - protobuf==3.20.0
+      - psutil==5.9.4
+      - pure-eval==0.2.2
+      - pycparser==2.21
+      - pygments==2.14.0
+      - pykalman==0.11.2
+      - pyparsing==3.3.2
+      - pyrsistent==0.19.3
+      - python-dateutil==2.8.2
+      - python-json-logger==2.0.7
+      - pytz==2025.2
+      - pywin32==305
+      - pywinpty==2.0.10
+      - pyyaml==6.0
+      - pyzmq==25.0.0
+      - qtconsole==5.4.0
+      - qtpy==2.3.0
+      - quadprog==0.1.13
+      - regex==2022.10.31
+      - requests==2.28.2
+      - rfc3339-validator==0.1.4
+      - rfc3986-validator==0.1.1
+      - scikit-base==0.13.1
+      - scikit-learn==1.7.2
+      - scipy==1.15.3
+      - scs==3.2.11
+      - send2trash==1.8.0
+      - sentencepiece==0.1.97
+      - six==1.16.0
+      - sniffio==1.3.0
+      - soupsieve==2.4
+      - stack-data==0.6.2
+      - terminado==0.17.1
+      - threadpoolctl==3.6.0
+      - tinycss2==1.2.1
+      - tokenizers==0.13.2
+      - torch==1.13.1+cu117
+      - torchaudio==0.13.1+cu117
+      - torchvision==0.14.1+cu117
+      - tornado==6.2
+      - tqdm==4.65.0
+      - traitlets==5.9.0
+      - transformers==4.26.1
+      - typing-extensions==4.5.0
+      - tzdata==2025.3
+      - uri-template==1.2.0
+      - urllib3==1.26.15
+      - vadersentiment==3.3.2
+      - wcwidth==0.2.6
+      - webcolors==1.12
+      - webencodings==0.5.1
+      - websocket-client==1.5.1
+      - widgetsnbextension==4.0.5
+      - yarg==0.1.9
+      - zipp==3.14.0
+prefix: C:\Users\joaop\anaconda3\envs\qot
+</file>
+
+<file path="project/run_experiment.py">
+import pandas as pd
+import numpy as np
+import data_loading
+import utils
+from classification import trainingModel
+import quantifications as qfy
+from time_series_adjustment import MovingAverage, KalmanMA
+from utils import params_KFMA
+import argparse
+
+
+seeds = [1, 2,
+         3, 4, 5, 6, 7, 8, 9, 10
+         ]
+text_senti_data = [('global_covid19_tweets', 15), ('nepali_dataset_eng', 15), ('Apple-Twitter-Sentiment-DFE', 15)]
+tubular_data = [('bike', 55),
+                ('energy', 20), ('news', 36)
+                ]
+classifiers_set1 = ['LR', 'RF']
+classifiers_set2 = ['vader', 'amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061']
+qua_methods = ['DyS', 'ACC', 'GPAC', 'EDy']
+TSA_methods = ['QFY', 'MA', 'KFMA']
+unified_window = 4
+
+
+def experiment(dataset, classifier, quantifier, tsa, random_state):
+
+    print(f'-----{dataset[0]}-{classifier}-{quantifier}-{tsa}-{random_state}-----')
+
+    if dataset in tubular_data:
+        training_set, ts_chunks, ts_prevalence, c, t_size = data_loading.loading(dataset[0])
+        classifier = trainingModel.trainer(training_set.loc[:, ~training_set.columns.isin(['label'])],
+                                           training_set['label'], classifier, random_state)
+    else:
+        ts_chunks, ts_prevalence, c, t_size = data_loading.loading(dataset[0])
+
+    '''
+    Majority of quantification methods may need datasets to be split for a validation
+    set and test sets since they need the scores from labelled datasets to do
+    distribution matching or TPR, FPR. The weights of Time Series Forecast and
+    Quantification also need information of sentiment classifier gained by analyzing
+    validation set.
+    '''
+
+    '''
+    ----------------------------------initial values-----------------------------------
+    '''
+    if dataset[1] < unified_window:
+        lf = 0
+    else:
+        lf = dataset[1] - unified_window
+    inital_value = ts_prevalence.iloc[lf:dataset[1], :].to_numpy()
+
+    '''
+    ----------------------------------validation set----------------------------------
+    '''
+    val_true = ts_prevalence[:dataset[1]].to_numpy()
+    val_set, test_sets, test_dsts = utils.val_test_split(ts_chunks.copy(), ts_prevalence, dataset[1])
+
+    '''
+    Whether use sets with natural distributions or synthetic distribution.
+    'utils.getMAE_val_set2()' does not use the random seed. because the val 
+    subsets are real datasets of different timestamps, not synthetic sampled 
+    from validation set.
+    '''
+    val_MAE, val_MSE, sep_mae, val_pred_dists = qfy.getMAE_val_set(val_set, quantifier, classifier, c,
+                                                                   ts_chunks, dataset,
+                                                                   random_seed=random_state)
+    print('MAE on val samples:', round(val_MAE, 4))
+
+    '''
+    -------------------------------quantifying test sets-------------------------------
+    '''
+    quantified_dsts = qfy.qtfied_dists(val_set, test_sets, dataset, quantifier, classifier, c, random_seed=random_state)
+    Qua_MAE = utils.mae(test_dsts, quantified_dsts)
+
+    if tsa == 'QFY':
+        print(f'***{quantifier} MAE***:', round(Qua_MAE, 4))
+        return Qua_MAE
+
+    else:
+        modified_dsts = []
+        val_init_value = np.empty((0, len(c)))
+        validation = [val_init_value, val_pred_dists, val_true, c, unified_window]
+        if tsa == 'MA':
+            for index in range(len(c)):
+                modified_prevs = MovingAverage(initial_value=inital_value[:, index],
+                                               quantified_prevs=quantified_dsts[:, index],
+                                               window=unified_window)
+                modified_dsts.append(modified_prevs)
+                if len(c) == 2:
+                    modified_dsts.append(1 - modified_prevs)
+                    break
+
+        elif tsa == 'KFMA':
+            _, _q = params_KFMA(validation, val_MSE)
+            q = 10 ** _q
+            for index in range(len(c)):
+                modified_prevs = KalmanMA(initial_value=inital_value[:, index],
+                                          observations=quantified_dsts[:, index],
+                                          qtfy_error=val_MSE,
+                                          state_dim=unified_window,
+                                          q=q)
+                modified_dsts.append(modified_prevs)
+
+        modified_dsts = np.array(modified_dsts).T
+        modified_dsts = modified_dsts / (np.sum(modified_dsts, axis=1).reshape(-1, 1))
+
+        Combi_MAE = utils.mae(test_dsts, modified_dsts)
+        print(f'***{quantifier}+{tsa} MAE***:', round(Combi_MAE, 4))
+        return Combi_MAE
+
+
+def qot(data_format):
+    if data_format == 'numeral':
+        dataset_set = tubular_data
+        clsfiers = classifiers_set1
+    else:
+        dataset_set = text_senti_data
+        clsfiers = classifiers_set2
+
+    seed_tables = []
+    for seed in seeds:
+        idx = 0
+        outputfile = pd.DataFrame({'Dataset': [],
+                                   'QuaMethod': [],
+                                   'Classifier': [],
+                                   'QFY': [],
+                                   'MA': [],
+                                   'KFMA': []})
+
+        for data_name in dataset_set:
+            for qua in qua_methods:
+                for mod in clsfiers:
+                    output = [data_name[0], qua, mod]
+                    for tsa_method in TSA_methods:
+                        res = experiment(data_name, mod, qua, tsa_method, seed)
+                        output.append(res)
+                    outputfile.loc[idx] = output
+                    idx = idx + 1
+
+        seed_tables.append(outputfile)
+
+    tot = np.zeros(3 * 4 * 2 * 3).reshape(3 * 4 * 2, 3)
+    for i in range(len(seeds)):
+        res = seed_tables[i].to_numpy()[:, 3:6]
+        tot = tot + res
+    tot = tot / len(seeds)
+
+    tot_res = seed_tables[1].iloc[:, :3]
+    for i, m in enumerate(TSA_methods):
+        tot_res[m] = tot[:, i]
+
+    # Save quanti_results of one random case in to a table
+    TSF_results = tot_res.iloc[:, 3:6]
+    best_m = []
+    for i in range(len(TSF_results)):
+        mini = 1
+        m_num = -1
+        for col_num, cell in enumerate(TSF_results.iloc[i, :]):
+            if cell < mini:
+                mini = cell
+                m_num = col_num
+        best_m.append(TSA_methods[m_num])
+
+    tot_res['best_method'] = np.array(best_m)
+    tot_res.to_csv(f'output_files/MAE_quanti_results_mean_{data_format}.csv')
+
+
+def sota_qot():
+    implementation = [['amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061', 'CC', 'QFY'],
+                      ['amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061', 'CC', 'MA'],
+                      ['None', 'ReadMe2', 'QFY'],
+                      ['None', 'ReadMe2', 'KFMA']]
+
+    outputfile = pd.DataFrame({'QoT Method': [text_senti_data[0][0], text_senti_data[1][0], text_senti_data[2][0]]})
+
+    tot = np.zeros((3, 4))
+    for seed in seeds:
+        for i, data_name in enumerate(text_senti_data):
+            for j, cond in enumerate(implementation):
+                res = experiment(data_name, cond[0], cond[1], cond[2], seed)
+                tot[i, j] += res
+    tot = tot / len(seeds)
+
+    outputfile['CC'] = tot[:, 0]
+    outputfile['CC+MA'] = tot[:, 1]
+    outputfile['ReadMe2'] = tot[:, 2]
+    outputfile['ReadMe2+KFMA'] = tot[:, 3]
+
+    outputfile.to_csv(f'output_files/sota_qot_MAE_quanti_results_mean.csv')
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--run',
+                        choices=['numeral', 'textual', 'sota_qot'],
+                        default='textual',
+                        help='Choose experiment')
+    args = parser.parse_args()
+    if args.run == 'sota_qot':
+        sota_qot()
+    else:
+        qot(args)
+
+    # qot('textual')
+    # qot('tabular')
+    # sota_qot()
+</file>
+
+<file path="requirements.txt">
+--extra-index-url https://download.pytorch.org/whl/cu117
+
+anyio==3.6.2
+argon2-cffi==21.3.0
+argon2-cffi-bindings==21.2.0
+arrow==1.2.3
+asttokens==2.2.1
+attrs==22.2.0
+backcall==0.2.0
+beautifulsoup4==4.11.2
+bleach==6.0.0
+certifi==2022.12.7
+cffi==1.15.1
+chardet==6.0.0.post1
+charset-normalizer==3.1.0
+clarabel==0.11.1
+colorama==0.4.6
+comm==0.1.2
+contourpy==1.3.2
+cvxpy==1.7.5
+cycler==0.12.1
+debugpy==1.6.6
+decorator==5.1.1
+defusedxml==0.7.1
+docopt==0.6.2
+executing==1.2.0
+fastjsonschema==2.16.2
+filelock==3.9.0
+fonttools==4.61.1
+fqdn==1.5.1
+huggingface-hub==0.13.1
+idna==3.4
+importlib-metadata==6.0.0
+ipykernel==6.21.2
+ipython==8.12.3
+ipython-genutils==0.2.0
+ipywidgets==8.0.4
+isoduration==20.11.0
+jedi==0.18.2
+Jinja2==3.1.2
+joblib==1.5.3
+jsonpointer==2.3
+jsonschema==4.17.3
+jupyter==1.0.0
+jupyter-console==6.6.1
+jupyter-events==0.6.3
+jupyter_client==8.0.3
+jupyter_core==5.2.0
+jupyter_server==2.3.0
+jupyter_server_terminals==0.4.4
+jupyterlab-pygments==0.2.2
+jupyterlab-widgets==3.0.5
+kiwisolver==1.4.9
+lightgbm==4.6.0
+MarkupSafe==2.1.2
+matplotlib==3.10.8
+matplotlib-inline==0.1.6
+mistune==2.0.5
+nbclassic==0.5.2
+nbclient==0.7.2
+nbconvert==7.16.4
+nbformat==5.7.3
+nest-asyncio==1.5.6
+notebook==6.5.2
+notebook_shim==0.2.2
+numpy==1.24.2
+osqp==1.1.1
+packaging==23.0
+pandas==2.3.3
+pandocfilters==1.5.0
+parso==0.8.3
+pickleshare==0.7.5
+Pillow==9.4.0
+pipreqs==0.5.0
+platformdirs==3.0.0
+prometheus-client==0.16.0
+prompt_toolkit==3.0.48
+protobuf==3.20.0
+psutil==5.9.4
+pure-eval==0.2.2
+pycparser==2.21
+Pygments==2.14.0
+pykalman==0.11.2
+pyparsing==3.3.2
+pyrsistent==0.19.3
+python-dateutil==2.8.2
+python-json-logger==2.0.7
+pytz==2025.2
+pywin32==305
+pywinpty==2.0.10
+PyYAML==6.0
+pyzmq==25.0.0
+qtconsole==5.4.0
+QtPy==2.3.0
+quadprog==0.1.13
+regex==2022.10.31
+requests==2.28.2
+rfc3339-validator==0.1.4
+rfc3986-validator==0.1.1
+scikit-base==0.13.1
+scikit-learn==1.7.2
+scipy==1.15.3
+scs==3.2.11
+Send2Trash==1.8.0
+sentencepiece==0.1.97
+six==1.16.0
+sniffio==1.3.0
+soupsieve==2.4
+stack-data==0.6.2
+terminado==0.17.1
+threadpoolctl==3.6.0
+tinycss2==1.2.1
+tokenizers==0.13.2
+torch==1.13.1+cu117
+torchaudio==0.13.1+cu117
+torchvision==0.14.1+cu117
+tornado==6.2
+tqdm==4.65.0
+traitlets==5.9.0
+transformers==4.26.1
+typing_extensions==4.5.0
+tzdata==2025.3
+uri-template==1.2.0
+urllib3==1.26.15
+vaderSentiment==3.3.2
+wcwidth==0.2.6
+webcolors==1.12
+webencodings==0.5.1
+websocket-client==1.5.1
+widgetsnbextension==4.0.5
+yarg==0.1.9
+zipp==3.14.0
+</file>
+
+<file path="README.md">
+# Quantification Over Time
+
+This repository provides codes of experiments in our paper 
+
+*Quantification Over Time*
+
+Feiyu Li, Hassan H. Gharakheili, and Gustavo Batista
+
+## Experiment
+
+The codes are implemented in python 3.9. The whole environment of this project is listed in `requirements.txt` and `requirements.yaml`. Result tables in the paper can be reproduced by simply running the main script:
+
+```bash
+python3 run_experiment.py --run {experiment}
+```
+
+in which `--run textual` means experiments on Twitter sentiment datasets, `--run numeral` means experiments on non-textual datasets, `--run sota_qot` means comparisons between proposed approach and state-of-the-art conducted approaches.
+
+The experimental setup details are described in the paper.
+</file>
+
+</files>
