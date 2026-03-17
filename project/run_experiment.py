@@ -1,13 +1,18 @@
-import pandas as pd
-import numpy as np
+import argparse
+import warnings
+
+import config
 import data_loading
+import numpy as np
+import pandas as pd
+import quantifications as qfy
 import utils
 from classification import trainingModel
-import quantifications as qfy
-from time_series_adjustment import MovingAverage, KalmanMA
+from time_series_adjustment import KalmanMA, MovingAverage
+from tqdm import tqdm
 from utils import params_KFMA
-import argparse
-import config
+
+warnings.filterwarnings("ignore")
 
 
 # seeds = [1, 2,
@@ -15,7 +20,7 @@ import config
 #          ]
 seeds = [1, 2, 3]
 # text_senti_data = [('global_covid19_tweets', 15), ('nepali_dataset_eng', 15), ('Apple-Twitter-Sentiment-DFE', 15)]
-text_senti_data = [("Apple-Twitter-Sentiment-DFE", 15)]
+text_senti_data = [("Apple-Twitter-Sentiment-DFE", 15), ("nepali_dataset_eng", 15)]
 # tubular_data = [('bike', 55),
 # ('energy', 20), ('news', 36)
 # ]
@@ -36,7 +41,7 @@ unified_window = 4
 
 def experiment(dataset, classifier, quantifier, tsa, random_state):
 
-    print(f"-----{dataset[0]}-{classifier}-{quantifier}-{tsa}-{random_state}-----")
+    # print(f"-----{dataset[0]}-{classifier}-{quantifier}-{tsa}-{random_state}-----")
 
     if dataset in tubular_data:
         training_set, ts_chunks, ts_prevalence, c, t_size = data_loading.loading(
@@ -78,14 +83,14 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
 
     """
     Whether use sets with natural distributions or synthetic distribution.
-    'utils.getMAE_val_set2()' does not use the random seed. because the val 
-    subsets are real datasets of different timestamps, not synthetic sampled 
+    'utils.getMAE_val_set2()' does not use the random seed. because the val
+    subsets are real datasets of different timestamps, not synthetic sampled
     from validation set.
     """
     val_MAE, val_MSE, sep_mae, val_pred_dists = qfy.getMAE_val_set(
         val_set, quantifier, classifier, c, ts_chunks, dataset, random_seed=random_state
     )
-    print("MAE on val samples:", round(val_MAE, 4))
+    # print("MAE on val samples:", round(val_MAE, 4))
 
     """
     -------------------------------quantifying test sets-------------------------------
@@ -96,7 +101,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
     Qua_MAE = utils.mae(test_dsts, quantified_dsts)
 
     if tsa == "QFY":
-        print(f"***{quantifier} MAE***:", round(Qua_MAE, 4))
+        # print(f"***{quantifier} MAE***:", round(Qua_MAE, 4))
         return Qua_MAE
 
     else:
@@ -132,7 +137,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
         modified_dsts = modified_dsts / (np.sum(modified_dsts, axis=1).reshape(-1, 1))
 
         Combi_MAE = utils.mae(test_dsts, modified_dsts)
-        print(f"***{quantifier}+{tsa} MAE***:", round(Combi_MAE, 4))
+        # print(f"***{quantifier}+{tsa} MAE***:", round(Combi_MAE, 4))
         return Combi_MAE
 
 
@@ -145,7 +150,7 @@ def qot(data_format):
         clsfiers = classifiers_set2
 
     seed_tables = []
-    for seed in seeds:
+    for seed in tqdm(seeds, desc="Processing Seeds"):
         idx = 0
         outputfile = pd.DataFrame(
             {
@@ -158,8 +163,8 @@ def qot(data_format):
             }
         )
 
-        for data_name in dataset_set:
-            for qua in qua_methods:
+        for data_name in tqdm(dataset_set, desc="Datasets", leave=False):
+            for qua in tqdm(qua_methods, desc="Quantifiers", leave=False):
                 for mod in clsfiers:
                     output = [data_name[0], qua, mod]
                     for tsa_method in TSA_methods:
@@ -217,7 +222,7 @@ def sota_qot():
     )
 
     tot = np.zeros((3, 4))
-    for seed in seeds:
+    for seed in tqdm(seeds, desc="Processing Seeds"):
         for i, data_name in enumerate(text_senti_data):
             for j, cond in enumerate(implementation):
                 res = experiment(data_name, cond[0], cond[1], cond[2], seed)
