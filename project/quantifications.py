@@ -4,7 +4,6 @@ from sklearn.metrics import confusion_matrix
 from classification import Classifying
 import pandas as pd
 from utils import mse, mae
-import os
 import config
 
 
@@ -21,26 +20,30 @@ def ACC_on_TSsets(val_set, test_set_dict, senti_model, classes):
     for i, cla in enumerate(classes):
         val_y_one = val_y_.copy()
 
-        val_y_one.loc[val_y_one['true_y'] == cla, 'true_y'] = 'True'
-        val_y_one.loc[val_y_one['true_y'].isin(classes), 'true_y'] = 'False'
-        val_y_one.loc[val_y_one['pred_y'] == cla, 'pred_y'] = 'True'
-        val_y_one.loc[val_y_one['pred_y'].isin(classes), 'pred_y'] = 'False'
-        tn, fp, fn, tp = confusion_matrix(val_y_one['true_y'], val_y_one['pred_y']).ravel()
-        tpr = tp / (tp+fn)
-        fpr = fp / (fp+tn)
+        val_y_one.loc[val_y_one["true_y"] == cla, "true_y"] = "True"
+        val_y_one.loc[val_y_one["true_y"].isin(classes), "true_y"] = "False"
+        val_y_one.loc[val_y_one["pred_y"] == cla, "pred_y"] = "True"
+        val_y_one.loc[val_y_one["pred_y"].isin(classes), "pred_y"] = "False"
+        tn, fp, fn, tp = confusion_matrix(
+            val_y_one["true_y"], val_y_one["pred_y"]
+        ).ravel()
+        tpr = tp / (tp + fn)
+        fpr = fp / (fp + tn)
 
         qtfied_prevs_one = []
         for j in range(len(test_set_dict)):
-            test_y_one = tests_y_[j]['pred_y'].copy()
-            test_y_one[test_y_one == cla] = 'True'
-            test_y_one[test_y_one.isin(classes)] = 'False'
+            test_y_one = tests_y_[j]["pred_y"].copy()
+            test_y_one[test_y_one == cla] = "True"
+            test_y_one[test_y_one.isin(classes)] = "False"
             qua_prev = ACC(test_y_one, tpr, fpr)
             qtfied_prevs_one.append(qua_prev)
         qtfied_distribution.append(qtfied_prevs_one)
 
     qtfied_distribution = np.array(qtfied_distribution).T
     qtfied_distribution[np.all(qtfied_distribution == 0, axis=1)] = 1
-    qtfied_distribution = qtfied_distribution / (np.sum(qtfied_distribution, axis=1).reshape(-1, 1))
+    qtfied_distribution = qtfied_distribution / (
+        np.sum(qtfied_distribution, axis=1).reshape(-1, 1)
+    )
     return qtfied_distribution
 
 
@@ -55,19 +58,23 @@ def DyS_on_TSsets(val_set, test_set_dict, senti_model, classes):
 
     qtfied_distribution = []
     for i, cla in enumerate(classes):
-        val_score_one = val_score[val_score['true_y'] == cla][cla]
-        val_score_rest = val_score[val_score['true_y'] != cla][cla]
+        val_score_one = val_score[val_score["true_y"] == cla][cla]
+        val_score_rest = val_score[val_score["true_y"] != cla][cla]
 
         qtfied_prevs_one = []
         for j in range(len(test_set_dict)):
             test_score_one = tests_scores[j][cla]
-            qua_prev = DyS(val_score_one, val_score_rest, test_score_one, measure='topsoe')
+            qua_prev = DyS(
+                val_score_one, val_score_rest, test_score_one, measure="topsoe"
+            )
             qtfied_prevs_one.append(qua_prev)
         qtfied_distribution.append(qtfied_prevs_one)
 
     qtfied_distribution = np.array(qtfied_distribution).T
     qtfied_distribution[np.all(qtfied_distribution == 0, axis=1)] = 1
-    qtfied_distribution = qtfied_distribution / (np.sum(qtfied_distribution, axis=1).reshape(-1, 1))
+    qtfied_distribution = qtfied_distribution / (
+        np.sum(qtfied_distribution, axis=1).reshape(-1, 1)
+    )
 
     return qtfied_distribution
 
@@ -84,10 +91,9 @@ def GPAC_on_TSsets(val_set, test_set_dict, senti_model, classes):
 
     qtfied_distribution = []
     for j in range(len(test_set_dict)):
-        qua_prev = GPAC(val_scores,
-                        tests_scores[j],
-                        val_labels['true_y'].to_numpy(),
-                        classes)
+        qua_prev = GPAC(
+            val_scores, tests_scores[j], val_labels["true_y"].to_numpy(), classes
+        )
         qtfied_distribution.append(qua_prev)
 
     qtfied_distribution = np.array(qtfied_distribution)
@@ -107,10 +113,9 @@ def EDy_on_TSsets(val_set, test_set_dict, senti_model, classes):
 
     qtfied_distribution = []
     for j in range(len(test_set_dict)):
-        qua_prev = EDy(val_scores,
-                       val_labels['true_y'].to_numpy(),
-                       tests_scores[j],
-                       classes)
+        qua_prev = EDy(
+            val_scores, val_labels["true_y"].to_numpy(), tests_scores[j], classes
+        )
         qtfied_distribution.append(qua_prev)
 
     qtfied_distribution = np.array(qtfied_distribution)
@@ -129,8 +134,8 @@ def CC_on_TSsets(test_set_dict, senti_model, classes):
         qua_prev = []
         s = len(tests_y_[j])
         for c in classes:
-            n = tests_y_[j][tests_y_[j]['pred_y'] == c]['pred_y'].count()
-            qua_prev.append(n/s)
+            n = tests_y_[j][tests_y_[j]["pred_y"] == c]["pred_y"].count()
+            qua_prev.append(n / s)
 
         qtfied_distribution.append(qua_prev)
 
@@ -144,28 +149,39 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, random_seed):
     subsamples_dsts = []
     for i in range(name[1]):
         subsamples_dict[i] = data[i]
-        s = subsamples_dict[i].value_counts('label').sum()
+        s = subsamples_dict[i].value_counts("label").sum()
         p = []
         for label in c:
-            p.append(subsamples_dict[i][subsamples_dict[i]['label'] == label]['label'].count() / s)
+            p.append(
+                subsamples_dict[i][subsamples_dict[i]["label"] == label][
+                    "label"
+                ].count()
+                / s
+            )
         subsamples_dsts.append(p)
 
     subsamples_prevs = np.array(subsamples_dsts)
 
     val_MAE, val_MSE, sep_MAE, qtfd_dsts = None, None, None, None
 
-    if qua == 'DyS':
+    if qua == "DyS":
         qtfd_dsts = DyS_on_TSsets(val_set, subsamples_dict, mod, c)
-    elif qua == 'ACC':
+    elif qua == "ACC":
         qtfd_dsts = ACC_on_TSsets(val_set, subsamples_dict, mod, c)
-    elif qua == 'GPAC':
+    elif qua == "GPAC":
         qtfd_dsts = GPAC_on_TSsets(val_set, subsamples_dict, mod, c)
-    elif qua == 'EDy':
+    elif qua == "EDy":
         qtfd_dsts = EDy_on_TSsets(val_set, subsamples_dict, mod, c)
-    elif qua == 'CC':
+    elif qua == "CC":
         qtfd_dsts = CC_on_TSsets(subsamples_dict, mod, c)
-    elif qua == 'ReadMe2':
-        val_preds_path = config.README_IMPLEMENT_DIR / 'data' / name[0] / f'seed{random_seed}' / 'val_preds.csv'
+    elif qua == "ReadMe2":
+        val_preds_path = (
+            config.README_IMPLEMENT_DIR
+            / "data"
+            / name[0]
+            / f"seed{random_seed}"
+            / "val_preds.csv"
+        )
         qtfd_dsts = np.array(pd.read_csv(val_preds_path))
 
     sep_MAE = abs(subsamples_prevs - qtfd_dsts).sum(axis=0) / len(subsamples_dsts)
@@ -177,25 +193,36 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, random_seed):
 def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
 
     try:
-        results_file = config.QUANT_RESULTS_DIR / f'_{dataname[0]}' / f'{qua}-{str(mod)[:6]}-{dataname[0]}-{dataname[1]}.csv'
-        quantified_dsts = pd.read_csv(results_file).drop(
-            labels=['Unnamed: 0'], axis=1).to_numpy()
+        results_file = (
+            config.QUANT_RESULTS_DIR
+            / f"_{dataname[0]}"
+            / f"{qua}-{str(mod)[:6]}-{dataname[0]}-{dataname[1]}.csv"
+        )
+        quantified_dsts = (
+            pd.read_csv(results_file).drop(labels=["Unnamed: 0"], axis=1).to_numpy()
+        )
         quantified_dsts = np.nan_to_num(quantified_dsts, nan=1 / len(c))
 
     except IOError:
         quantified_dsts = 0
-        if qua == 'DyS':
+        if qua == "DyS":
             quantified_dsts = DyS_on_TSsets(valset, data_dict, mod, c)
-        elif qua == 'ACC':
+        elif qua == "ACC":
             quantified_dsts = ACC_on_TSsets(valset, data_dict, mod, c)
-        elif qua == 'GPAC':
+        elif qua == "GPAC":
             quantified_dsts = GPAC_on_TSsets(valset, data_dict, mod, c)
-        elif qua == 'EDy':
+        elif qua == "EDy":
             quantified_dsts = EDy_on_TSsets(valset, data_dict, mod, c)
-        elif qua == 'CC':
+        elif qua == "CC":
             quantified_dsts = CC_on_TSsets(data_dict, mod, c)
-        elif qua == 'ReadMe2':
-            test_preds_path = config.README_IMPLEMENT_DIR / 'data' / dataname[0] / f'seed{random_seed}' / 'test_preds.csv'
+        elif qua == "ReadMe2":
+            test_preds_path = (
+                config.README_IMPLEMENT_DIR
+                / "data"
+                / dataname[0]
+                / f"seed{random_seed}"
+                / "test_preds.csv"
+            )
             df_quantified_dsts = pd.read_csv(test_preds_path)
             quantified_dsts = np.array(df_quantified_dsts)
 
@@ -205,10 +232,12 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
         for i, cls in enumerate(c):
             pd_quantified_dsts[cls] = quantified_dsts[:, i]
         pd_quantified_dsts = pd.DataFrame(quantified_dsts)
-        dataset_folder = config.QUANT_RESULTS_DIR / f'_{dataname[0]}'
+        dataset_folder = config.QUANT_RESULTS_DIR / f"_{dataname[0]}"
         if not dataset_folder.exists():
             dataset_folder.mkdir(parents=True, exist_ok=True)
 
-        pd_quantified_dsts.to_csv(dataset_folder / f'{qua}-{str(mod)[:6]}-{dataname[0]}.csv')
+        pd_quantified_dsts.to_csv(
+            dataset_folder / f"{qua}-{str(mod)[:6]}-{dataname[0]}.csv"
+        )
 
     return quantified_dsts

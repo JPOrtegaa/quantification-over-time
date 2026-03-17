@@ -1,5 +1,4 @@
 from pathlib import Path
-import os
 
 # Base directory of the project
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -17,10 +16,12 @@ QUANT_RESULTS_DIR = PROJECT_ROOT / "quant_results"
 PLOTS_DIR = PROJECT_ROOT / "plots"
 README_IMPLEMENT_DIR = PROJECT_ROOT / "ReadMe_Implement"
 
+
 # Ensure directories exist
 def ensure_dirs():
     for d in [OUTPUT_DIR, QUANT_RESULTS_DIR, PLOTS_DIR]:
         d.mkdir(parents=True, exist_ok=True)
+
 
 ensure_dirs()
 

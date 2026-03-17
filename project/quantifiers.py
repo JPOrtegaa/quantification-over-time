@@ -1,13 +1,12 @@
+import cvxpy as cvx
 import numpy as np
 import pandas as pd
-import cvxpy as cvx
 import quadprog
 from sklearn import metrics
 from sklearn.metrics.pairwise import manhattan_distances
 
 
 class Distances(object):
-
     def __init__(self, P, Q):
         if sum(P) < 1e-20 or sum(Q) < 1e-20:
             raise "One or both vector are zero (empty)..."
@@ -48,11 +47,11 @@ class Distances(object):
 def DyS_distance(sc_1, sc_2, measure):
     dist = Distances(sc_1, sc_2)
 
-    if measure == 'topsoe':
+    if measure == "topsoe":
         return dist.topsoe()
-    elif measure == 'probsymm':
+    elif measure == "probsymm":
         return dist.probsymm()
-    elif measure == 'hellinger':
+    elif measure == "hellinger":
         return dist.hellinger()
     else:
         return 2
@@ -79,13 +78,16 @@ def getHist(scores, nbins):
 
     re = np.repeat(1 / (len(breaks) - 1), (len(breaks) - 1))
     for i in range(1, len(breaks)):
-        re[i - 1] = (re[i - 1] + len(np.where((scores >= breaks[i - 1]) & (scores < breaks[i]))[0])) / (len(scores) + 1)
+        re[i - 1] = (
+            re[i - 1]
+            + len(np.where((scores >= breaks[i - 1]) & (scores < breaks[i]))[0])
+        ) / (len(scores) + 1)
     return re
 
 
 def ACC(pred_labels, tpr, fpr):
-    cc_ouput = round(pred_labels[pred_labels == 'True'].count() / len(pred_labels), 3)
-    diff_tpr_fpr = (float(tpr) - float(fpr))
+    cc_ouput = round(pred_labels[pred_labels == "True"].count() / len(pred_labels), 3)
+    diff_tpr_fpr = float(tpr) - float(fpr)
     one_prop = (cc_ouput - float(fpr)) / diff_tpr_fpr
 
     if one_prop <= 0:  # clipping the output between [0,1]
@@ -99,13 +101,14 @@ def ACC(pred_labels, tpr, fpr):
 
 
 def HDy(pos_scores, neg_scores, test_scores):
-    bin_size = np.linspace(10, 110, 11)  # creating bins from 10 to 110 with step size 10
+    bin_size = np.linspace(
+        10, 110, 11
+    )  # creating bins from 10 to 110 with step size 10
     alpha_values = [round(x, 2) for x in np.linspace(0, 1, 101)]
 
     result = []
     num_bins = []
     for bins in bin_size:
-
         p_bin_count = getHist(pos_scores, bins)
         n_bin_count = getHist(neg_scores, bins)
         te_bin_count = getHist(test_scores, bins)
@@ -113,8 +116,16 @@ def HDy(pos_scores, neg_scores, test_scores):
         vDist = []
 
         for x in range(0, len(alpha_values), 1):
-            vDist.append(DyS_distance(((p_bin_count * alpha_values[x]) + (n_bin_count * (1 - alpha_values[x]))),
-                                           te_bin_count, measure="hellinger"))
+            vDist.append(
+                DyS_distance(
+                    (
+                        (p_bin_count * alpha_values[x])
+                        + (n_bin_count * (1 - alpha_values[x]))
+                    ),
+                    te_bin_count,
+                    measure="hellinger",
+                )
+            )
 
         result.append(alpha_values[np.argmin(vDist)])
 
@@ -122,8 +133,10 @@ def HDy(pos_scores, neg_scores, test_scores):
     return pos_prop
 
 
-def DyS(pos_scores, neg_scores, test_scores, measure='topsoe'):
-    bin_size = np.linspace(2, 20, 10)  # [10,20] range(10,111,10) #creating bins from 2 to 10 with step size 2
+def DyS(pos_scores, neg_scores, test_scores, measure="topsoe"):
+    bin_size = np.linspace(
+        2, 20, 10
+    )  # [10,20] range(10,111,10) #creating bins from 2 to 10 with step size 2
     bin_size = np.append(bin_size, 30)
 
     # print('bin_size', bin_size)
@@ -134,10 +147,13 @@ def DyS(pos_scores, neg_scores, test_scores, measure='topsoe'):
         te_bin_count = getHist(test_scores, bins)
 
         def f(x):
-            return DyS_distance(((p_bin_count * x) + (n_bin_count * (1 - x))), te_bin_count, measure=measure)
+            return DyS_distance(
+                ((p_bin_count * x) + (n_bin_count * (1 - x))),
+                te_bin_count,
+                measure=measure,
+            )
 
         result.append(TernarySearch(0, 1, f))
-
 
     pos_prop = round(np.median(result), 4)
     return pos_prop
@@ -148,7 +164,7 @@ def GAC(y_hat, train_labels, yt_hat, classes):
 
     df_p_y_hat = pd.DataFrame({cls: [0] for cls in classes})
     for pred_label in y_hat:
-        df_p_y_hat[pred_label][0] = df_p_y_hat[pred_label][0]+1
+        df_p_y_hat[pred_label][0] = df_p_y_hat[pred_label][0] + 1
     p_y_hat = df_p_y_hat.to_numpy()
     p_y_hat = np.squeeze(p_y_hat / p_y_hat.sum())
 
@@ -192,9 +208,13 @@ def EDy(tr_scores, labels, te_scores, classes):
         train_distrib_[cls] = tr_scores[y_ext_ == cls, :]
         train_n_cls_i_[n_cls, 0] = len(train_distrib_[cls])
 
-    K_, G_, C_, b_ = compute_ed_param_train(distance, train_distrib_, classes, train_n_cls_i_)
+    K_, G_, C_, b_ = compute_ed_param_train(
+        distance, train_distrib_, classes, train_n_cls_i_
+    )
 
-    a_ = compute_ed_param_test(distance, train_distrib_, te_scores, K_, classes, train_n_cls_i_)
+    a_ = compute_ed_param_test(
+        distance, train_distrib_, te_scores, K_, classes, train_n_cls_i_
+    )
 
     prevalences = solve_ed(G=G_, a=a_, C=C_, b=b_)
 
@@ -216,7 +236,7 @@ def dpofa(m):
                 s = s + t * t
         s = r[k, k] - s
         if s <= 0.0:
-            return k+1, r
+            return k + 1, r
         r[k, k] = np.sqrt(s)
     return 0, r
 
@@ -239,7 +259,7 @@ def nearest_pd(A):
     k = 1
     while not is_pd(A3):
         mineig = np.min(np.real(np.linalg.eigvals(A3)))
-        A3 += indendity_matrix * (-mineig * k ** 2 + spacing)
+        A3 += indendity_matrix * (-mineig * k**2 + spacing)
         k += 1
 
     return A3
@@ -261,9 +281,13 @@ def compute_ed_param_train(distance_func, train_distrib, classes, n_cls_i):
     #  computing sum de distances for each pair of classes
     K = np.zeros((n_classes, n_classes))
     for i in range(n_classes):
-        K[i, i] = distance_func(train_distrib[classes[i]], train_distrib[classes[i]]).sum()
+        K[i, i] = distance_func(
+            train_distrib[classes[i]], train_distrib[classes[i]]
+        ).sum()
         for j in range(i + 1, n_classes):
-            K[i, j] = distance_func(train_distrib[classes[i]], train_distrib[classes[j]]).sum()
+            K[i, j] = distance_func(
+                train_distrib[classes[i]], train_distrib[classes[j]]
+            ).sum()
             K[j, i] = K[i, j]
 
     #  average distance
@@ -271,11 +295,11 @@ def compute_ed_param_train(distance_func, train_distrib, classes, n_cls_i):
 
     B = np.zeros((n_classes - 1, n_classes - 1))
     for i in range(n_classes - 1):
-        B[i, i] = - K[i, i] - K[-1, -1] + 2 * K[i, -1]
+        B[i, i] = -K[i, i] - K[-1, -1] + 2 * K[i, -1]
         for j in range(n_classes - 1):
             if j == i:
                 continue
-            B[i, j] = - K[i, j] - K[-1, -1] + K[i, -1] + K[j, -1]
+            B[i, j] = -K[i, j] - K[-1, -1] + K[i, -1] + K[j, -1]
 
     #  computing the terms for the optimization problem
     G = 2 * B
@@ -288,7 +312,9 @@ def compute_ed_param_train(distance_func, train_distrib, classes, n_cls_i):
     return K, G, C, b
 
 
-def compute_ed_param_test(distance_func, train_distrib, test_distrib, K, classes, n_cls_i):
+def compute_ed_param_test(
+    distance_func, train_distrib, test_distrib, K, classes, n_cls_i
+):
 
     n_classes = len(classes)
     Kt = np.zeros(n_classes)
@@ -297,7 +323,7 @@ def compute_ed_param_test(distance_func, train_distrib, test_distrib, K, classes
 
     Kt = Kt / (n_cls_i.squeeze() * float(len(test_distrib)))
 
-    a = 2 * (- Kt[:-1] + K[:-1, -1] + Kt[-1] - K[-1, -1])
+    a = 2 * (-Kt[:-1] + K[:-1, -1] + Kt[-1] - K[-1, -1])
     return a
 
 
@@ -317,7 +343,7 @@ def EMQ(test_scores, nclasses, p_tr):
             p_cond_s[:, c] = p_cond_s[:, c] / s
         p_s_old = np.copy(p_s)
         p_s = np.sum(p_cond_s, axis=0) / p_cond_s.shape[0]
-        if (np.sum(np.abs(p_s - p_s_old)) < eps):
+        if np.sum(np.abs(p_s - p_s_old)) < eps:
             break
 
-    return p_s/np.sum(p_s)
+    return p_s / np.sum(p_s)

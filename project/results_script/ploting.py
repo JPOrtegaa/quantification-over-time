@@ -1,6 +1,4 @@
 import matplotlib.pyplot as plt
-import seaborn as sns
-import os
 import sys
 from pathlib import Path
 
@@ -8,7 +6,19 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 import config
 
-def plots(true_dsts, quantified_dsts, modified_dsts, dataset, head, condition, c, qua, tsa, show=True):
+
+def plots(
+    true_dsts,
+    quantified_dsts,
+    modified_dsts,
+    dataset,
+    head,
+    condition,
+    c,
+    qua,
+    tsa,
+    show=True,
+):
     fig, _ = plt.subplots(len(c), 1, figsize=(10, 6))
     fig.suptitle(head + condition)
     x = [j for j in range(true_dsts.shape[0])]
@@ -24,35 +34,38 @@ def plots(true_dsts, quantified_dsts, modified_dsts, dataset, head, condition, c
     # quantified_dsts = quantified_dsts[65:-220, :]
     # modified_dsts = modified_dsts[65:-220, :]
 
-
     for i in range(len(c)):
-        if i != len(c)-1:
-            orig = _[i].plot(x, true_dsts[:, i], color='black', label='True')
-            quant = _[i].plot(x,  quantified_dsts[:, i], color='blue', label=qua)
-            combi = _[i].plot(x, modified_dsts[:, i], color='orange', label=f'{qua}+{tsa}')
+        if i != len(c) - 1:
+            orig = _[i].plot(x, true_dsts[:, i], color="black", label="True")
+            quant = _[i].plot(x, quantified_dsts[:, i], color="blue", label=qua)
+            combi = _[i].plot(
+                x, modified_dsts[:, i], color="orange", label=f"{qua}+{tsa}"
+            )
             # combi = _[i].plot(x, modified_dsts[:, i], color='orange', label='TSA')
-            _[i].set_ylabel('Prevalence of '+str(c[i]))
-            _[i].tick_params('x', labelbottom=False)
-            _[i].legend(loc='upper right')
+            _[i].set_ylabel("Prevalence of " + str(c[i]))
+            _[i].tick_params("x", labelbottom=False)
+            _[i].legend(loc="upper right")
             _[i].grid()
 
         else:
-            orig = _[i].plot(x, true_dsts[:, i], color='black', label='True')
-            quant = _[i].plot(x,  quantified_dsts[:, i], color='blue', label=qua)
-            combi = _[i].plot(x, modified_dsts[:, i], color='orange', label=f'{qua}+{tsa}')
+            orig = _[i].plot(x, true_dsts[:, i], color="black", label="True")
+            quant = _[i].plot(x, quantified_dsts[:, i], color="blue", label=qua)
+            combi = _[i].plot(
+                x, modified_dsts[:, i], color="orange", label=f"{qua}+{tsa}"
+            )
             # combi = _[i].plot(x, modified_dsts[:, i], color='orange', label='TSA')
-            _[i].set_ylabel('Prevalence of '+str(c[i]))
-            _[i].legend(loc='upper right')
-            _[i].set_xlabel('Timestamp Unit')
+            _[i].set_ylabel("Prevalence of " + str(c[i]))
+            _[i].legend(loc="upper right")
+            _[i].set_xlabel("Timestamp Unit")
             _[i].grid()
 
     # plt.subplots_adjust(left=0.07, right=0.975, top=0.96, bottom=0.1)  # adjust the blank
 
-    dataset_plots_dir = config.PLOTS_DIR / f'_{dataset}'
+    dataset_plots_dir = config.PLOTS_DIR / f"_{dataset}"
     if not dataset_plots_dir.exists():
         dataset_plots_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = f'{head[16:-15]}-{condition}.png'
+    filename = f"{head[16:-15]}-{condition}.png"
     plt.savefig(dataset_plots_dir / filename, dpi=150)
     # plt.savefig(rf'.\plots\_{dataset}\{head[16:-15]}-{condition}.eps', format='eps')
 
