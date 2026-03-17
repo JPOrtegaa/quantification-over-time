@@ -30,7 +30,7 @@ tubular_data = [('bike', 55)]
 classifiers_set1 = ['RF']
 classifiers_set2 = ['amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061']
 qua_methods = ['DyS']
-TSA_methods = ['MA', 'KFMA']
+TSA_methods = ['QFY', 'MA', 'KFMA']
 unified_window = 4
 
 
@@ -152,18 +152,20 @@ def qot(data_format):
 
         seed_tables.append(outputfile)
 
-    tot = np.zeros(3 * 4 * 2 * 3).reshape(3 * 4 * 2, 3)
+    num_rows = len(seed_tables[0])
+    num_methods = len(TSA_methods)
+    tot = np.zeros((num_rows, num_methods))
     for i in range(len(seeds)):
-        res = seed_tables[i].to_numpy()[:, 3:6]
+        res = seed_tables[i].to_numpy()[:, 3:3+num_methods]
         tot = tot + res
     tot = tot / len(seeds)
 
-    tot_res = seed_tables[1].iloc[:, :3]
+    tot_res = seed_tables[0].iloc[:, :3].copy()
     for i, m in enumerate(TSA_methods):
         tot_res[m] = tot[:, i]
 
     # Save quanti_results of one random case in to a table
-    TSF_results = tot_res.iloc[:, 3:6]
+    TSF_results = tot_res.iloc[:, 3:3+num_methods]
     best_m = []
     for i in range(len(TSF_results)):
         mini = 1
