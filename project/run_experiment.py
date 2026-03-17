@@ -29,7 +29,7 @@ tubular_data = [("bike", 55)]
 
 classifiers_set1 = ["RF"]
 classifiers_set2 = ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"]
-qua_methods = ["DyS"]
+qua_methods = ["DyS", "DyS-Opt"]
 TSA_methods = ["QFY", "MA", "KFMA"]
 unified_window = 4
 

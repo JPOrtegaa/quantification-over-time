@@ -159,6 +159,32 @@ def DyS(pos_scores, neg_scores, test_scores, measure="topsoe"):
     return pos_prop
 
 
+def DyS_Opt(pos_scores, neg_scores, test_scores, measure="topsoe", left=0.0, right=1.0):
+    bin_size = np.linspace(
+        2, 20, 10
+    )  # [10,20] range(10,111,10) #creating bins from 2 to 10 with step size 2
+    bin_size = np.append(bin_size, 30)
+
+    # print('bin_size', bin_size)
+    result = []
+    for bins in bin_size:
+        p_bin_count = getHist(pos_scores, bins)
+        n_bin_count = getHist(neg_scores, bins)
+        te_bin_count = getHist(test_scores, bins)
+
+        def f(x):
+            return DyS_distance(
+                ((p_bin_count * x) + (n_bin_count * (1 - x))),
+                te_bin_count,
+                measure=measure,
+            )
+
+        result.append(TernarySearch(left, right, f))
+
+    pos_prop = round(np.median(result), 4)
+    return pos_prop
+
+
 def GAC(y_hat, train_labels, yt_hat, classes):
     CM = metrics.confusion_matrix(train_labels, yt_hat, normalize="true").T
 

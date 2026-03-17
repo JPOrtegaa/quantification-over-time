@@ -1,5 +1,5 @@
 import numpy as np
-from quantifiers import DyS, ACC, GPAC, EDy
+from quantifiers import DyS, DyS_Opt, ACC, GPAC, EDy
 from sklearn.metrics import confusion_matrix
 from classification import Classifying
 import pandas as pd
@@ -67,6 +67,47 @@ def DyS_on_TSsets(val_set, test_set_dict, senti_model, classes):
             qua_prev = DyS(
                 val_score_one, val_score_rest, test_score_one, measure="topsoe"
             )
+            qtfied_prevs_one.append(qua_prev)
+        qtfied_distribution.append(qtfied_prevs_one)
+
+    qtfied_distribution = np.array(qtfied_distribution).T
+    qtfied_distribution[np.all(qtfied_distribution == 0, axis=1)] = 1
+    qtfied_distribution = qtfied_distribution / (
+        np.sum(qtfied_distribution, axis=1).reshape(-1, 1)
+    )
+
+    return qtfied_distribution
+
+
+def DyS_Opt_on_TSsets(val_set, test_set_dict, senti_model, classes):
+    val_y_res = Classifying.analyzer(val_set, senti_model, classes)
+    val_score = val_y_res[1]
+
+    tests_scores = {}
+    for i in range(len(test_set_dict)):
+        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
+        tests_scores[i] = test_score
+
+    qtfied_distribution = []
+    for i, cla in enumerate(classes):
+        val_score_one = val_score[val_score["true_y"] == cla][cla]
+        val_score_rest = val_score[val_score["true_y"] != cla][cla]
+
+        qtfied_prevs_one = []
+        alpha_prev = None
+        for j in range(len(test_set_dict)):
+            if alpha_prev is None:
+                current_left = 0.0
+                current_right = 1.0
+            else:
+                current_left = max(0.0, alpha_prev - 0.05)
+                current_right = min(1.0, alpha_prev + 0.05)
+                
+            test_score_one = tests_scores[j][cla]
+            qua_prev = DyS_Opt(
+                val_score_one, val_score_rest, test_score_one, measure="topsoe", left=current_left, right=current_right
+            )
+            alpha_prev = qua_prev
             qtfied_prevs_one.append(qua_prev)
         qtfied_distribution.append(qtfied_prevs_one)
 
@@ -166,6 +207,8 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, random_seed):
 
     if qua == "DyS":
         qtfd_dsts = DyS_on_TSsets(val_set, subsamples_dict, mod, c)
+    elif qua == "DyS-Opt":
+        qtfd_dsts = DyS_Opt_on_TSsets(val_set, subsamples_dict, mod, c)
     elif qua == "ACC":
         qtfd_dsts = ACC_on_TSsets(val_set, subsamples_dict, mod, c)
     elif qua == "GPAC":
@@ -207,6 +250,8 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
         quantified_dsts = 0
         if qua == "DyS":
             quantified_dsts = DyS_on_TSsets(valset, data_dict, mod, c)
+        elif qua == "DyS-Opt":
+            quantified_dsts = DyS_Opt_on_TSsets(valset, data_dict, mod, c)
         elif qua == "ACC":
             quantified_dsts = ACC_on_TSsets(valset, data_dict, mod, c)
         elif qua == "GPAC":
