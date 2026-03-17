@@ -4,6 +4,14 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from . import HuggingFaceModel
 from sklearn.metrics import accuracy_score, f1_score
 
+_MODEL_CACHE = {}
+
+
+def get_model(mod):
+    if mod not in _MODEL_CACHE:
+        _MODEL_CACHE[mod] = HuggingFaceModel.SentiAnalyzer(mod)
+    return _MODEL_CACHE[mod]
+
 
 # Preprocess text (username and link placeholders)
 def analyzer(df_text, mod, classes):
@@ -22,8 +30,6 @@ def analyzer(df_text, mod, classes):
         pred_scores = []
 
         if len(classes) == 2:
-            pred_labels = []
-            pred_scores = []
             if mod == "vader":
                 classifier = SentimentIntensityAnalyzer()
 
@@ -39,12 +45,12 @@ def analyzer(df_text, mod, classes):
                     )
 
             else:
-                model = HuggingFaceModel.SentiAnalyzer(mod)
-                for x in df_x:
-                    scores, label = model.analyze(str(x))
+                model = get_model(mod)
+                scores_batch, labels_batch = model.batch_analyze(df_x)
+                for scores, label in zip(scores_batch, labels_batch):
                     if scores[2] >= scores[0]:
                         pred_labels.append(1)
-                    elif scores[2] < scores[0]:
+                    else:
                         pred_labels.append(-1)
                     s = scores[0] + scores[2]
                     pred_scores.append([scores[0] / s, scores[2] / s])
@@ -75,18 +81,16 @@ def analyzer(df_text, mod, classes):
                     pred_scores.append([res_x["neg"], res_x["neu"], res_x["pos"]])
 
             else:
-                model = HuggingFaceModel.SentiAnalyzer(mod)
-                for x in df_x:
-                    scores, label = model.analyze(str(x))
+                model = get_model(mod)
+                scores_batch, labels_batch = model.batch_analyze(df_x)
+                for scores, label in zip(scores_batch, labels_batch):
                     if label == "negative" or label == "Negative" or label == "LABEL_0":
                         pred_labels.append(-1)
                     elif (
                         label == "positive" or label == "Positive" or label == "LABEL_2"
                     ):
                         pred_labels.append(1)
-                    elif (
-                        label == "neutral" or label == "Negative" or label == "LABEL_1"
-                    ):
+                    else:
                         pred_labels.append(0)
                     pred_scores.append(scores)
 

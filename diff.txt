@@ -1,0 +1,135 @@
+diff --git a/project/classification/Classifying.py b/project/classification/Classifying.py
+index bbdf4ad..a44cda2 100644
+--- a/project/classification/Classifying.py
++++ b/project/classification/Classifying.py
+@@ -4,6 +4,14 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+ from . import HuggingFaceModel
+ from sklearn.metrics import accuracy_score, f1_score
+ 
++_MODEL_CACHE = {}
++
++
++def get_model(mod):
++    if mod not in _MODEL_CACHE:
++        _MODEL_CACHE[mod] = HuggingFaceModel.SentiAnalyzer(mod)
++    return _MODEL_CACHE[mod]
++
+ 
+ # Preprocess text (username and link placeholders)
+ def analyzer(df_text, mod, classes):
+@@ -22,8 +30,6 @@ def analyzer(df_text, mod, classes):
+         pred_scores = []
+ 
+         if len(classes) == 2:
+-            pred_labels = []
+-            pred_scores = []
+             if mod == "vader":
+                 classifier = SentimentIntensityAnalyzer()
+ 
+@@ -39,12 +45,12 @@ def analyzer(df_text, mod, classes):
+                     )
+ 
+             else:
+-                model = HuggingFaceModel.SentiAnalyzer(mod)
+-                for x in df_x:
+-                    scores, label = model.analyze(str(x))
++                model = get_model(mod)
++                scores_batch, labels_batch = model.batch_analyze(df_x)
++                for scores, label in zip(scores_batch, labels_batch):
+                     if scores[2] >= scores[0]:
+                         pred_labels.append(1)
+-                    elif scores[2] < scores[0]:
++                    else:
+                         pred_labels.append(-1)
+                     s = scores[0] + scores[2]
+                     pred_scores.append([scores[0] / s, scores[2] / s])
+@@ -75,18 +81,16 @@ def analyzer(df_text, mod, classes):
+                     pred_scores.append([res_x["neg"], res_x["neu"], res_x["pos"]])
+ 
+             else:
+-                model = HuggingFaceModel.SentiAnalyzer(mod)
+-                for x in df_x:
+-                    scores, label = model.analyze(str(x))
++                model = get_model(mod)
++                scores_batch, labels_batch = model.batch_analyze(df_x)
++                for scores, label in zip(scores_batch, labels_batch):
+                     if label == "negative" or label == "Negative" or label == "LABEL_0":
+                         pred_labels.append(-1)
+                     elif (
+                         label == "positive" or label == "Positive" or label == "LABEL_2"
+                     ):
+                         pred_labels.append(1)
+-                    elif (
+-                        label == "neutral" or label == "Negative" or label == "LABEL_1"
+-                    ):
++                    else:
+                         pred_labels.append(0)
+                     pred_scores.append(scores)
+ 
+diff --git a/project/classification/HuggingFaceModel.py b/project/classification/HuggingFaceModel.py
+index b03aa7b..0072b0c 100644
+--- a/project/classification/HuggingFaceModel.py
++++ b/project/classification/HuggingFaceModel.py
+@@ -5,6 +5,9 @@ from scipy.special import softmax
+ # Preprocess text (username and link placeholders)
+ 
+ 
++import torch
++
++
+ class SentiAnalyzer:
+     def __init__(self, model):
+ 
+@@ -12,6 +15,10 @@ class SentiAnalyzer:
+         self.tokenizer = AutoTokenizer.from_pretrained(model)
+         self.config = AutoConfig.from_pretrained(model)
+ 
++        # Move to GPU if available
++        self.device = "cuda" if torch.cuda.is_available() else "cpu"
++        self.model.to(self.device)
++
+     """
+     here we can see if different preprocessing 
+     """
+@@ -27,9 +34,10 @@ class SentiAnalyzer:
+ 
+     def analyze(self, text):
+         text = SentiAnalyzer.preprocess(text)
+-        encoded_input = self.tokenizer(text, return_tensors="pt")
+-        output = self.model(**encoded_input)
+-        scores = output[0][0].detach().numpy()
++        encoded_input = self.tokenizer(text, return_tensors="pt").to(self.device)
++        with torch.no_grad():
++            output = self.model(**encoded_input)
++        scores = output[0][0].detach().cpu().numpy()
+         scores = softmax(scores)
+ 
+         ranking = np.argsort(scores)
+@@ -37,3 +45,27 @@ class SentiAnalyzer:
+         l = self.config.id2label[ranking[0]]
+ 
+         return scores, l
++
++    def batch_analyze(self, texts, batch_size=32):
++        all_scores = []
++        all_labels = []
++
++        for i in range(0, len(texts), batch_size):
++            batch_texts = texts[i : i + batch_size]
++            batch_texts = [SentiAnalyzer.preprocess(str(x)) for x in batch_texts]
++            encoded_input = self.tokenizer(
++                batch_texts, padding=True, truncation=True, return_tensors="pt"
++            ).to(self.device)
++            with torch.no_grad():
++                output = self.model(**encoded_input)
++            batch_scores = output[0].detach().cpu().numpy()
++            batch_scores = softmax(batch_scores, axis=1)
++
++            for scores in batch_scores:
++                ranking = np.argsort(scores)
++                ranking = ranking[::-1]
++                label = self.config.id2label[ranking[0]]
++                all_scores.append(scores)
++                all_labels.append(label)
++
++        return np.array(all_scores), all_labels
