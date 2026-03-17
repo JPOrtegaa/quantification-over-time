@@ -244,6 +244,9 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
         quantified_dsts = (
             pd.read_csv(results_file).drop(labels=["Unnamed: 0"], axis=1).to_numpy()
         )
+        if len(quantified_dsts) != len(data_dict):
+            raise IOError("Stale results found (different number of windows)")
+
         quantified_dsts = np.nan_to_num(quantified_dsts, nan=1 / len(c))
 
     except IOError:
@@ -281,8 +284,9 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
         if not dataset_folder.exists():
             dataset_folder.mkdir(parents=True, exist_ok=True)
 
-        pd_quantified_dsts.to_csv(
-            dataset_folder / f"{qua}-{str(mod)[:6]}-{dataname[0]}.csv"
+        results_file = (
+            dataset_folder / f"{qua}-{str(mod)[:6]}-{dataname[0]}-{dataname[1]}.csv"
         )
+        pd_quantified_dsts.to_csv(results_file)
 
     return quantified_dsts
