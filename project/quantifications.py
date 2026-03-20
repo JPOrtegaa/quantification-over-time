@@ -79,7 +79,7 @@ def DyS_on_TSsets(val_set, test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def DyS_Opt_on_TSsets(val_set, test_set_dict, senti_model, classes):
+def DyS_Opt_on_TSsets(val_set, test_set_dict, senti_model, classes, stride_ratio=0.05):
     val_y_res = Classifying.analyzer(val_set, senti_model, classes)
     val_score = val_y_res[1]
 
@@ -100,8 +100,8 @@ def DyS_Opt_on_TSsets(val_set, test_set_dict, senti_model, classes):
                 current_left = 0.0
                 current_right = 1.0
             else:
-                current_left = max(0.0, alpha_prev - 0.05)
-                current_right = min(1.0, alpha_prev + 0.05)
+                current_left = max(0.0, alpha_prev - stride_ratio)
+                current_right = min(1.0, alpha_prev + stride_ratio)
                 
             test_score_one = tests_scores[j][cla]
             qua_prev = DyS_Opt(
@@ -185,7 +185,7 @@ def CC_on_TSsets(test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def getMAE_val_set(val_set, qua, mod, c, data, name, random_seed):
+def getMAE_val_set(val_set, qua, mod, c, data, name, stride_ratio, random_seed):
     subsamples_dict = {}
     subsamples_dsts = []
     for i in range(name[1]):
@@ -208,7 +208,7 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, random_seed):
     if qua == "DyS":
         qtfd_dsts = DyS_on_TSsets(val_set, subsamples_dict, mod, c)
     elif qua == "DyS-Opt":
-        qtfd_dsts = DyS_Opt_on_TSsets(val_set, subsamples_dict, mod, c)
+        qtfd_dsts = DyS_Opt_on_TSsets(val_set, subsamples_dict, mod, c, stride_ratio=stride_ratio)
     elif qua == "ACC":
         qtfd_dsts = ACC_on_TSsets(val_set, subsamples_dict, mod, c)
     elif qua == "GPAC":
@@ -233,7 +233,7 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, random_seed):
     return val_MAE, val_MSE, sep_MAE, qtfd_dsts
 
 
-def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
+def qtfied_dists(valset, data_dict, dataname, qua, mod, c, stride_ratio, random_seed):
 
     try:
         results_file = (
@@ -254,7 +254,7 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, random_seed):
         if qua == "DyS":
             quantified_dsts = DyS_on_TSsets(valset, data_dict, mod, c)
         elif qua == "DyS-Opt":
-            quantified_dsts = DyS_Opt_on_TSsets(valset, data_dict, mod, c)
+            quantified_dsts = DyS_Opt_on_TSsets(valset, data_dict, mod, c, stride_ratio=stride_ratio)
         elif qua == "ACC":
             quantified_dsts = ACC_on_TSsets(valset, data_dict, mod, c)
         elif qua == "GPAC":

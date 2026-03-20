@@ -7,10 +7,18 @@ import urllib.request
 from utils import val_test_split
 import config
 
-WINDOW_SIZE = 1000
-STRIDE = 100
+WINDOW_SIZE_RATIO = 0.1  # 10% of dataset
+STRIDE_RATIO = 0.01      # 1% of dataset
 
-def sliding_window_split(df, classes, window_size=WINDOW_SIZE, stride=STRIDE):
+def sliding_window_split(df, classes):
+    dataset_size = len(df)
+    window_size = max(10, int(dataset_size * WINDOW_SIZE_RATIO))
+    stride = max(1, int(dataset_size * STRIDE_RATIO))
+    
+    # Calculate stride_ratio relative to window_size for temporal constraint
+    # stride_ratio = (stride / window_size) represents the fraction of "new" data per window
+    stride_ratio = stride / window_size
+
     ts_chunks = {}
     chunk_index = 0
     start = 0
@@ -35,7 +43,7 @@ def sliding_window_split(df, classes, window_size=WINDOW_SIZE, stride=STRIDE):
     # ensure columns match classes order exactly
     prevalence_df = prevalence_df[classes]
     
-    return ts_chunks, prevalence_df, chunk_index
+    return ts_chunks, prevalence_df, stride_ratio
 
 
 def count_median(datadict):
@@ -60,9 +68,9 @@ def nepali_dataset_eng():
     df1 = df1.sort_values(by="Datetime").reset_index(drop=True)
 
     classes = [-1, 0, 1]
-    ts_chunks, prevalence_df, total_windows = sliding_window_split(df1, classes)
+    ts_chunks, prevalence_df, stride_ratio = sliding_window_split(df1, classes)
 
-    return ts_chunks, prevalence_df, classes, count_median(ts_chunks)
+    return ts_chunks, prevalence_df, classes, stride_ratio
 
 
 def global_covid19_tweets():
@@ -97,9 +105,9 @@ def global_covid19_tweets():
     df1 = df1.sort_values(by="TweetAt").reset_index(drop=True)
 
     classes = [-1, 0, 1]
-    ts_chunks, prevalence_df, total_windows = sliding_window_split(df1, classes)
+    ts_chunks, prevalence_df, stride_ratio = sliding_window_split(df1, classes)
 
-    return ts_chunks, prevalence_df, classes, count_median(ts_chunks)
+    return ts_chunks, prevalence_df, classes, stride_ratio
 
 
 def Apple_Twitter_Sentiment_DFE():
@@ -140,9 +148,9 @@ def Apple_Twitter_Sentiment_DFE():
     df1 = df1.sort_values(by="date").reset_index(drop=True)
 
     classes = [-1, 0, 1]
-    ts_chunks, prevalence_df, total_windows = sliding_window_split(df1, classes)
+    ts_chunks, prevalence_df, stride_ratio = sliding_window_split(df1, classes)
 
-    return ts_chunks, prevalence_df, classes, count_median(ts_chunks)
+    return ts_chunks, prevalence_df, classes, stride_ratio
 
 
 def bike():
@@ -168,7 +176,7 @@ def bike():
     dta = dta.drop(["dteday"], axis=1)
 
     classes = [0, 1]
-    ts_chunks, prevalence_df, total_windows = sliding_window_split(dta, classes)
+    ts_chunks, prevalence_df, stride_ratio = sliding_window_split(dta, classes)
 
     training_data, ts_data_dict, ts_prevalence = val_test_split(
         ts_chunks.copy(), prevalence_df, training_size
@@ -177,7 +185,7 @@ def bike():
         frac=1.0, replace=False, random_state=42
     ).reset_index(drop=True)
 
-    return training_data, ts_data_dict, ts_prevalence, classes, None
+    return training_data, ts_data_dict, ts_prevalence, classes, stride_ratio
 
 
 def energy():
@@ -199,7 +207,7 @@ def energy():
     dta = dta.drop(["date"], axis=1)
 
     classes = [-1, 0, 1]
-    ts_chunks, prevalence_df, total_windows = sliding_window_split(dta, classes)
+    ts_chunks, prevalence_df, stride_ratio = sliding_window_split(dta, classes)
 
     training_data, ts_data_dict, ts_prevalence = val_test_split(
         ts_chunks.copy(), prevalence_df, training_size
@@ -208,7 +216,7 @@ def energy():
         frac=1.0, replace=False, random_state=42
     ).reset_index(drop=True)
 
-    return training_data, ts_data_dict, ts_prevalence, classes, None
+    return training_data, ts_data_dict, ts_prevalence, classes, stride_ratio
 
 
 def news():
@@ -235,7 +243,7 @@ def news():
     dta = dta.drop(["timedelta"], axis=1)
 
     classes = [0, 1]
-    ts_chunks, prevalence_df, total_windows = sliding_window_split(dta, classes)
+    ts_chunks, prevalence_df, stride_ratio = sliding_window_split(dta, classes)
 
     training_data, ts_data_dict, ts_prevalence = val_test_split(
         ts_chunks.copy(), prevalence_df, training_size
@@ -244,7 +252,7 @@ def news():
         frac=1.0, replace=False, random_state=42
     ).reset_index(drop=True)
 
-    return training_data, ts_data_dict, ts_prevalence, classes, None
+    return training_data, ts_data_dict, ts_prevalence, classes, stride_ratio
 
 
 def loading(dataname):

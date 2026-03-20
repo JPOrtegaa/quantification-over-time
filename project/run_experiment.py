@@ -44,7 +44,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
     # print(f"-----{dataset[0]}-{classifier}-{quantifier}-{tsa}-{random_state}-----")
 
     if dataset in tubular_data:
-        training_set, ts_chunks, ts_prevalence, c, t_size = data_loading.loading(
+        training_set, ts_chunks, ts_prevalence, c, ts_info = data_loading.loading(
             dataset[0]
         )
         classifier = trainingModel.trainer(
@@ -54,7 +54,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
             random_state,
         )
     else:
-        ts_chunks, ts_prevalence, c, t_size = data_loading.loading(dataset[0])
+        ts_chunks, ts_prevalence, c, ts_info = data_loading.loading(dataset[0])
 
     """
     Majority of quantification methods may need datasets to be split for a validation
@@ -88,7 +88,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
     from validation set.
     """
     val_MAE, val_MSE, sep_mae, val_pred_dists = qfy.getMAE_val_set(
-        val_set, quantifier, classifier, c, ts_chunks, dataset, random_seed=random_state
+        val_set, quantifier, classifier, c, ts_chunks, dataset, ts_info, random_seed=random_state
     )
     # print("MAE on val samples:", round(val_MAE, 4))
 
@@ -96,7 +96,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
     -------------------------------quantifying test sets-------------------------------
     """
     quantified_dsts = qfy.qtfied_dists(
-        val_set, test_sets, dataset, quantifier, classifier, c, random_seed=random_state
+        val_set, test_sets, dataset, quantifier, classifier, c, ts_info, random_seed=random_state
     )
     Qua_MAE = utils.mae(test_dsts, quantified_dsts)
 
@@ -150,7 +150,10 @@ def qot(data_format):
         clsfiers = classifiers_set2
 
     seed_tables = []
-    for seed in tqdm(seeds, desc="Processing Seeds"):
+    total_steps = len(seeds) * len(dataset_set) * len(qua_methods) * len(clsfiers)
+    pbar = tqdm(total=total_steps, desc=f"Experiment ({data_format})")
+    
+    for seed in seeds:
         idx = 0
         outputfile = pd.DataFrame(
             {
@@ -163,8 +166,8 @@ def qot(data_format):
             }
         )
 
-        for data_name in tqdm(dataset_set, desc="Datasets", leave=False):
-            for qua in tqdm(qua_methods, desc="Quantifiers", leave=False):
+        for data_name in dataset_set:
+            for qua in qua_methods:
                 for mod in clsfiers:
                     output = [data_name[0], qua, mod]
                     for tsa_method in TSA_methods:
@@ -172,8 +175,10 @@ def qot(data_format):
                         output.append(res)
                     outputfile.loc[idx] = output
                     idx = idx + 1
+                    pbar.update(1)
 
         seed_tables.append(outputfile)
+    pbar.close()
 
     num_rows = len(seed_tables[0])
     num_methods = len(TSA_methods)
@@ -222,11 +227,17 @@ def sota_qot():
     )
 
     tot = np.zeros((3, 4))
-    for seed in tqdm(seeds, desc="Processing Seeds"):
+    total_steps = len(seeds) * len(text_senti_data) * len(implementation)
+    pbar = tqdm(total=total_steps, desc="SOTA Experiment")
+    
+    for seed in seeds:
         for i, data_name in enumerate(text_senti_data):
             for j, cond in enumerate(implementation):
                 res = experiment(data_name, cond[0], cond[1], cond[2], seed)
                 tot[i, j] += res
+                pbar.update(1)
+    
+    pbar.close()
     tot = tot / len(seeds)
 
     outputfile["CC"] = tot[:, 0]

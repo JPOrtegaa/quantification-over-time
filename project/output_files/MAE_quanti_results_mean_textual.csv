@@ -1,5 +1,5 @@
 ,Dataset,QuaMethod,Classifier,QFY,MA,KFMA,best_method
-0,Apple-Twitter-Sentiment-DFE,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.12892503001933955,0.09986755773445277,0.09293122837771921,KFMA
-1,Apple-Twitter-Sentiment-DFE,DyS-Opt,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.09741507376283692,0.10690383759531213,0.09792400292204922,QFY
-2,nepali_dataset_eng,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.17117030403550193,0.16170790705523228,0.16443465874587004,MA
-3,nepali_dataset_eng,DyS-Opt,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.17599121160136968,0.17634520265883494,0.17559675552768073,KFMA
+0,Apple-Twitter-Sentiment-DFE,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.09538515501553275,0.0946116550280114,0.09272363611751051,KFMA
+1,Apple-Twitter-Sentiment-DFE,DyS-Opt,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.09540864675960581,0.09471379781992621,0.09288114048431767,KFMA
+2,nepali_dataset_eng,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.11783655547740518,0.11695689033405123,0.11683892604933958,KFMA
+3,nepali_dataset_eng,DyS-Opt,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.11783538540538079,0.11695647307512787,0.11683861358519874,KFMA
