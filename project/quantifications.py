@@ -7,13 +7,67 @@ from utils import mse, mae
 import config
 
 
-def ACC_on_TSsets(val_set, test_set_dict, senti_model, classes):
-    val_y_res = Classifying.analyzer(val_set, senti_model, classes)
+def _time_column_to_X(time_series):
+    t = pd.to_datetime(time_series, errors="coerce")
+    if t.isna().any():
+        raise ValueError("Time column contains invalid or missing datetimes after parsing.")
+    return (t.astype("int64").to_numpy(dtype=np.float64) / 1e9).reshape(-1, 1)
+
+
+def analyzer_with_regressor(df_text, mod, classes, regressor, time_column):
+    pred_labels, pred_scores, metrics = Classifying.analyzer(df_text, mod, classes)
+    if time_column not in df_text.columns:
+        raise KeyError(
+            f"Time column {time_column!r} not found in dataframe columns: {list(df_text.columns)}"
+        )
+    X = _time_column_to_X(df_text[time_column])
+    adjusted = regressor.predict(X)
+    adjusted = np.asarray(adjusted, dtype=np.float64)
+    if adjusted.ndim == 1:
+        adjusted = adjusted.reshape(-1, 1)
+    adjusted = np.clip(adjusted, 1e-8, None)
+    row_sums = adjusted.sum(axis=1, keepdims=True)
+    adjusted = adjusted / np.where(row_sums > 0, row_sums, 1.0)
+
+    new_scores = pred_scores.copy()
+    for i, cl in enumerate(classes):
+        new_scores[cl] = adjusted[:, i]
+
+    class_cols = np.array(classes)
+    idx = np.argmax(adjusted, axis=1)
+    new_pred_y = class_cols[idx]
+    new_labels = pd.DataFrame(
+        {"pred_y": new_pred_y, "true_y": pred_scores["true_y"].to_numpy()}
+    )
+    return new_labels, new_scores, metrics
+
+
+def make_analyze_fn(regressor, time_column):
+    def analyze_fn(df_text, mod, classes):
+        return analyzer_with_regressor(df_text, mod, classes, regressor, time_column)
+
+    return analyze_fn
+
+
+def prepare_regressor_training_arrays(val_set, classifier, classes, time_column):
+    _, pred_scores, _ = Classifying.analyzer(val_set, classifier, classes)
+    if time_column not in val_set.columns:
+        raise KeyError(
+            f"time column {time_column!r} not found; available: {list(val_set.columns)}"
+        )
+    X = _time_column_to_X(val_set[time_column])
+    Y = pred_scores[[cl for cl in classes]].to_numpy()
+    return X, Y
+
+
+def ACC_on_TSsets(val_set, test_set_dict, senti_model, classes, analyze_fn=None):
+    analyze = analyze_fn or Classifying.analyzer
+    val_y_res = analyze(val_set, senti_model, classes)
     val_y_ = val_y_res[0]
 
     tests_y_ = {}
     for i in range(len(test_set_dict)):
-        test_y_ = Classifying.analyzer(test_set_dict[i], senti_model, classes)[0]
+        test_y_ = analyze(test_set_dict[i], senti_model, classes)[0]
         tests_y_[i] = test_y_
 
     qtfied_distribution = []
@@ -47,13 +101,14 @@ def ACC_on_TSsets(val_set, test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def DyS_on_TSsets(val_set, test_set_dict, senti_model, classes):
-    val_y_res = Classifying.analyzer(val_set, senti_model, classes)
+def DyS_on_TSsets(val_set, test_set_dict, senti_model, classes, analyze_fn=None):
+    analyze = analyze_fn or Classifying.analyzer
+    val_y_res = analyze(val_set, senti_model, classes)
     val_score = val_y_res[1]
 
     tests_scores = {}
     for i in range(len(test_set_dict)):
-        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
+        test_score = analyze(test_set_dict[i], senti_model, classes)[1]
         tests_scores[i] = test_score
 
     qtfied_distribution = []
@@ -79,13 +134,14 @@ def DyS_on_TSsets(val_set, test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def DyS_Opt_on_TSsets(val_set, test_set_dict, senti_model, classes, stride_ratio=0.05):
-    val_y_res = Classifying.analyzer(val_set, senti_model, classes)
+def DyS_Opt_on_TSsets(val_set, test_set_dict, senti_model, classes, stride_ratio=0.05, analyze_fn=None):
+    analyze = analyze_fn or Classifying.analyzer
+    val_y_res = analyze(val_set, senti_model, classes)
     val_score = val_y_res[1]
 
     tests_scores = {}
     for i in range(len(test_set_dict)):
-        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
+        test_score = analyze(test_set_dict[i], senti_model, classes)[1]
         tests_scores[i] = test_score
 
     qtfied_distribution = []
@@ -120,14 +176,15 @@ def DyS_Opt_on_TSsets(val_set, test_set_dict, senti_model, classes, stride_ratio
     return qtfied_distribution
 
 
-def GPAC_on_TSsets(val_set, test_set_dict, senti_model, classes):
-    val_res = Classifying.analyzer(val_set, senti_model, classes)
+def GPAC_on_TSsets(val_set, test_set_dict, senti_model, classes, analyze_fn=None):
+    analyze = analyze_fn or Classifying.analyzer
+    val_res = analyze(val_set, senti_model, classes)
     val_scores = val_res[1].iloc[:, :-1].to_numpy()
     val_labels = val_res[0]
 
     tests_scores = {}
     for i in range(len(test_set_dict)):
-        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
+        test_score = analyze(test_set_dict[i], senti_model, classes)[1]
         tests_scores[i] = test_score.iloc[:, :-1].to_numpy()
 
     qtfied_distribution = []
@@ -142,14 +199,15 @@ def GPAC_on_TSsets(val_set, test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def EDy_on_TSsets(val_set, test_set_dict, senti_model, classes):
-    val_res = Classifying.analyzer(val_set, senti_model, classes)
+def EDy_on_TSsets(val_set, test_set_dict, senti_model, classes, analyze_fn=None):
+    analyze = analyze_fn or Classifying.analyzer
+    val_res = analyze(val_set, senti_model, classes)
     val_scores = val_res[1].iloc[:, :-1].to_numpy()
     val_labels = val_res[0]
 
     tests_scores = {}
     for i in range(len(test_set_dict)):
-        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
+        test_score = analyze(test_set_dict[i], senti_model, classes)[1]
         tests_scores[i] = test_score.iloc[:, :-1].to_numpy()
 
     qtfied_distribution = []
@@ -164,10 +222,11 @@ def EDy_on_TSsets(val_set, test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def CC_on_TSsets(test_set_dict, senti_model, classes):
+def CC_on_TSsets(test_set_dict, senti_model, classes, analyze_fn=None):
+    analyze = analyze_fn or Classifying.analyzer
     tests_y_ = {}
     for i in range(len(test_set_dict)):
-        test_y_ = Classifying.analyzer(test_set_dict[i], senti_model, classes)[0]
+        test_y_ = analyze(test_set_dict[i], senti_model, classes)[0]
         tests_y_[i] = test_y_
 
     qtfied_distribution = []
@@ -185,7 +244,24 @@ def CC_on_TSsets(test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def getMAE_val_set(val_set, qua, mod, c, data, name, stride_ratio, random_seed):
+def getMAE_val_set(
+    val_set,
+    qua,
+    mod,
+    c,
+    data,
+    name,
+    stride_ratio,
+    random_seed,
+    regressor=None,
+    time_column=None,
+):
+    analyze_fn = None
+    if regressor is not None:
+        if time_column is None:
+            raise ValueError("time_column is required when regressor is provided")
+        analyze_fn = make_analyze_fn(regressor, time_column)
+
     subsamples_dict = {}
     subsamples_dsts = []
     for i in range(name[1]):
@@ -206,17 +282,19 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, stride_ratio, random_seed):
     val_MAE, val_MSE, sep_MAE, qtfd_dsts = None, None, None, None
 
     if qua == "DyS":
-        qtfd_dsts = DyS_on_TSsets(val_set, subsamples_dict, mod, c)
+        qtfd_dsts = DyS_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "DyS-Opt":
-        qtfd_dsts = DyS_Opt_on_TSsets(val_set, subsamples_dict, mod, c, stride_ratio=stride_ratio)
+        qtfd_dsts = DyS_Opt_on_TSsets(
+            val_set, subsamples_dict, mod, c, stride_ratio=stride_ratio, analyze_fn=analyze_fn
+        )
     elif qua == "ACC":
-        qtfd_dsts = ACC_on_TSsets(val_set, subsamples_dict, mod, c)
+        qtfd_dsts = ACC_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "GPAC":
-        qtfd_dsts = GPAC_on_TSsets(val_set, subsamples_dict, mod, c)
+        qtfd_dsts = GPAC_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "EDy":
-        qtfd_dsts = EDy_on_TSsets(val_set, subsamples_dict, mod, c)
+        qtfd_dsts = EDy_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "CC":
-        qtfd_dsts = CC_on_TSsets(subsamples_dict, mod, c)
+        qtfd_dsts = CC_on_TSsets(subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "ReadMe2":
         val_preds_path = (
             config.README_IMPLEMENT_DIR
@@ -233,9 +311,27 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, stride_ratio, random_seed):
     return val_MAE, val_MSE, sep_MAE, qtfd_dsts
 
 
-def qtfied_dists(valset, data_dict, dataname, qua, mod, c, stride_ratio, random_seed):
+def qtfied_dists(
+    valset,
+    data_dict,
+    dataname,
+    qua,
+    mod,
+    c,
+    stride_ratio,
+    random_seed,
+    regressor=None,
+    time_column=None,
+):
+    analyze_fn = None
+    if regressor is not None:
+        if time_column is None:
+            raise ValueError("time_column is required when regressor is provided")
+        analyze_fn = make_analyze_fn(regressor, time_column)
 
     try:
+        if regressor is not None:
+            raise IOError("bypass disk cache when time regressor is used")
         results_file = (
             config.QUANT_RESULTS_DIR
             / f"_{dataname[0]}"
@@ -252,17 +348,19 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, stride_ratio, random_
     except IOError:
         quantified_dsts = 0
         if qua == "DyS":
-            quantified_dsts = DyS_on_TSsets(valset, data_dict, mod, c)
+            quantified_dsts = DyS_on_TSsets(valset, data_dict, mod, c, analyze_fn=analyze_fn)
         elif qua == "DyS-Opt":
-            quantified_dsts = DyS_Opt_on_TSsets(valset, data_dict, mod, c, stride_ratio=stride_ratio)
+            quantified_dsts = DyS_Opt_on_TSsets(
+                valset, data_dict, mod, c, stride_ratio=stride_ratio, analyze_fn=analyze_fn
+            )
         elif qua == "ACC":
-            quantified_dsts = ACC_on_TSsets(valset, data_dict, mod, c)
+            quantified_dsts = ACC_on_TSsets(valset, data_dict, mod, c, analyze_fn=analyze_fn)
         elif qua == "GPAC":
-            quantified_dsts = GPAC_on_TSsets(valset, data_dict, mod, c)
+            quantified_dsts = GPAC_on_TSsets(valset, data_dict, mod, c, analyze_fn=analyze_fn)
         elif qua == "EDy":
-            quantified_dsts = EDy_on_TSsets(valset, data_dict, mod, c)
+            quantified_dsts = EDy_on_TSsets(valset, data_dict, mod, c, analyze_fn=analyze_fn)
         elif qua == "CC":
-            quantified_dsts = CC_on_TSsets(data_dict, mod, c)
+            quantified_dsts = CC_on_TSsets(data_dict, mod, c, analyze_fn=analyze_fn)
         elif qua == "ReadMe2":
             test_preds_path = (
                 config.README_IMPLEMENT_DIR
@@ -287,6 +385,7 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, stride_ratio, random_
         results_file = (
             dataset_folder / f"{qua}-{str(mod)[:6]}-{dataname[0]}-{dataname[1]}.csv"
         )
-        pd_quantified_dsts.to_csv(results_file)
+        if regressor is None:
+            pd_quantified_dsts.to_csv(results_file)
 
     return quantified_dsts

@@ -7,261 +7,290 @@ import numpy as np
 import pandas as pd
 import quantifications as qfy
 import utils
-from classification import trainingModel
+from regression import trainingModel as regression_trainingModel
 from time_series_adjustment import KalmanMA, MovingAverage
 from tqdm import tqdm
 from utils import params_KFMA
 
 warnings.filterwarnings("ignore")
 
-
-# seeds = [1, 2,
-#          3, 4, 5, 6, 7, 8, 9, 10
-#          ]
 seeds = [1, 2, 3]
-# text_senti_data = [('global_covid19_tweets', 15), ('nepali_dataset_eng', 15), ('Apple-Twitter-Sentiment-DFE', 15)]
-text_senti_data = [("Apple-Twitter-Sentiment-DFE", 15), ("nepali_dataset_eng", 15)]
-# tubular_data = [('bike', 55),
-# ('energy', 20), ('news', 36)
-# ]
-tubular_data = [("bike", 55)]
-
-# classifiers_set1 = ['LR', 'RF']
-# classifiers_set2 = ['vader', 'amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061']
-# qua_methods = ['DyS', 'ACC', 'GPAC', 'EDy']
-# TSA_methods = ['QFY', 'MA', 'KFMA']
-# unified_window = 4
-
-classifiers_set1 = ["RF"]
-classifiers_set2 = ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"]
+DATASET = ("global_covid19_tweets", 15)
+CLASSIFIERS = ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"]
 qua_methods = ["DyS", "DyS-Opt"]
 TSA_methods = ["QFY", "MA", "KFMA"]
+EXP_TYPES = ("original", "TOMS")
+REGRESSOR_TIME_COLUMN = "TweetAt"
+REGRESSOR_NAME = "LR"
 unified_window = 4
 
 
-def experiment(dataset, classifier, quantifier, tsa, random_state):
+def load_textual_series(dataset_name):
+    return data_loading.loading(dataset_name)
 
-    # print(f"-----{dataset[0]}-{classifier}-{quantifier}-{tsa}-{random_state}-----")
 
-    if dataset in tubular_data:
-        training_set, ts_chunks, ts_prevalence, c, ts_info = data_loading.loading(
-            dataset[0]
-        )
-        classifier = trainingModel.trainer(
-            training_set.loc[:, ~training_set.columns.isin(["label"])],
-            training_set["label"],
-            classifier,
-            random_state,
-        )
-    else:
-        ts_chunks, ts_prevalence, c, ts_info = data_loading.loading(dataset[0])
-
-    """
-    Majority of quantification methods may need datasets to be split for a validation
-    set and test sets since they need the scores from labelled datasets to do
-    distribution matching or TPR, FPR. The weights of Time Series Forecast and
-    Quantification also need information of sentiment classifier gained by analyzing
-    validation set.
-    """
-
-    """
-    ----------------------------------initial values-----------------------------------
-    """
+def compute_initial_window_and_split(dataset, ts_chunks, ts_prevalence):
     if dataset[1] < unified_window:
         lf = 0
     else:
         lf = dataset[1] - unified_window
     inital_value = ts_prevalence.iloc[lf : dataset[1], :].to_numpy()
-
-    """
-    ----------------------------------validation set----------------------------------
-    """
     val_true = ts_prevalence[: dataset[1]].to_numpy()
     val_set, test_sets, test_dsts = utils.val_test_split(
         ts_chunks.copy(), ts_prevalence, dataset[1]
     )
+    return inital_value, val_true, val_set, test_sets, test_dsts
 
-    """
-    Whether use sets with natural distributions or synthetic distribution.
-    'utils.getMAE_val_set2()' does not use the random seed. because the val
-    subsets are real datasets of different timestamps, not synthetic sampled
-    from validation set.
-    """
-    val_MAE, val_MSE, sep_mae, val_pred_dists = qfy.getMAE_val_set(
-        val_set, quantifier, classifier, c, ts_chunks, dataset, ts_info, random_seed=random_state
+
+def fit_time_classifier_output_regressor(val_set, classifier, classes, time_column, random_state):
+    X, Y = qfy.prepare_regressor_training_arrays(val_set, classifier, classes, time_column)
+    return regression_trainingModel.trainer(X, Y, REGRESSOR_NAME, random_state)
+
+
+def run_validation_quantification(
+    val_set,
+    quantifier,
+    classifier,
+    c,
+    ts_chunks,
+    dataset,
+    ts_info,
+    random_state,
+    regressor=None,
+    time_column=None,
+):
+    return qfy.getMAE_val_set(
+        val_set,
+        quantifier,
+        classifier,
+        c,
+        ts_chunks,
+        dataset,
+        ts_info,
+        random_seed=random_state,
+        regressor=regressor,
+        time_column=time_column,
     )
-    # print("MAE on val samples:", round(val_MAE, 4))
 
-    """
-    -------------------------------quantifying test sets-------------------------------
-    """
-    quantified_dsts = qfy.qtfied_dists(
-        val_set, test_sets, dataset, quantifier, classifier, c, ts_info, random_seed=random_state
+
+def run_test_quantification(
+    val_set,
+    test_sets,
+    dataset,
+    quantifier,
+    classifier,
+    c,
+    ts_info,
+    random_state,
+    regressor=None,
+    time_column=None,
+):
+    return qfy.qtfied_dists(
+        val_set,
+        test_sets,
+        dataset,
+        quantifier,
+        classifier,
+        c,
+        ts_info,
+        random_seed=random_state,
+        regressor=regressor,
+        time_column=time_column,
     )
-    Qua_MAE = utils.mae(test_dsts, quantified_dsts)
 
+
+def tsa_adjust_and_mae(
+    tsa,
+    quantified_dsts,
+    test_dsts,
+    inital_value,
+    val_pred_dists,
+    val_true,
+    c,
+    val_MSE,
+):
+    qua_mae = utils.mae(test_dsts, quantified_dsts)
     if tsa == "QFY":
-        # print(f"***{quantifier} MAE***:", round(Qua_MAE, 4))
-        return Qua_MAE
+        return qua_mae
 
-    else:
-        modified_dsts = []
-        val_init_value = np.empty((0, len(c)))
-        validation = [val_init_value, val_pred_dists, val_true, c, unified_window]
-        if tsa == "MA":
-            for index in range(len(c)):
-                modified_prevs = MovingAverage(
-                    initial_value=inital_value[:, index],
-                    quantified_prevs=quantified_dsts[:, index],
-                    window=unified_window,
-                )
-                modified_dsts.append(modified_prevs)
-                if len(c) == 2:
-                    modified_dsts.append(1 - modified_prevs)
-                    break
+    modified_dsts = []
+    val_init_value = np.empty((0, len(c)))
+    validation = [val_init_value, val_pred_dists, val_true, c, unified_window]
+    if tsa == "MA":
+        for index in range(len(c)):
+            modified_prevs = MovingAverage(
+                initial_value=inital_value[:, index],
+                quantified_prevs=quantified_dsts[:, index],
+                window=unified_window,
+            )
+            modified_dsts.append(modified_prevs)
+            if len(c) == 2:
+                modified_dsts.append(1 - modified_prevs)
+                break
 
-        elif tsa == "KFMA":
-            _, _q = params_KFMA(validation, val_MSE)
-            q = 10**_q
-            for index in range(len(c)):
-                modified_prevs = KalmanMA(
-                    initial_value=inital_value[:, index],
-                    observations=quantified_dsts[:, index],
-                    qtfy_error=val_MSE,
-                    state_dim=unified_window,
-                    q=q,
-                )
-                modified_dsts.append(modified_prevs)
+    elif tsa == "KFMA":
+        _, _q = params_KFMA(validation, val_MSE)
+        q = 10**_q
+        for index in range(len(c)):
+            modified_prevs = KalmanMA(
+                initial_value=inital_value[:, index],
+                observations=quantified_dsts[:, index],
+                qtfy_error=val_MSE,
+                state_dim=unified_window,
+                q=q,
+            )
+            modified_dsts.append(modified_prevs)
 
-        modified_dsts = np.array(modified_dsts).T
-        modified_dsts = modified_dsts / (np.sum(modified_dsts, axis=1).reshape(-1, 1))
-
-        Combi_MAE = utils.mae(test_dsts, modified_dsts)
-        # print(f"***{quantifier}+{tsa} MAE***:", round(Combi_MAE, 4))
-        return Combi_MAE
+    modified_dsts = np.array(modified_dsts).T
+    modified_dsts = modified_dsts / (np.sum(modified_dsts, axis=1).reshape(-1, 1))
+    return utils.mae(test_dsts, modified_dsts)
 
 
-def qot(data_format):
-    if data_format == "numeral":
-        dataset_set = tubular_data
-        clsfiers = classifiers_set1
-    else:
-        dataset_set = text_senti_data
-        clsfiers = classifiers_set2
+def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
+    if exp_type == "TOMS" and tsa != "QFY":
+        raise ValueError("TOMS only supports tsa='QFY'")
 
+    ts_chunks, ts_prevalence, c, ts_info = load_textual_series(dataset[0])
+    inital_value, val_true, val_set, test_sets, test_dsts = (
+        compute_initial_window_and_split(dataset, ts_chunks, ts_prevalence)
+    )
+
+    regressor = None
+    time_column = None
+    if exp_type == "TOMS":
+        regressor = fit_time_classifier_output_regressor(
+            val_set, classifier, c, REGRESSOR_TIME_COLUMN, random_state
+        )
+        time_column = REGRESSOR_TIME_COLUMN
+
+    val_MAE, val_MSE, sep_mae, val_pred_dists = run_validation_quantification(
+        val_set,
+        quantifier,
+        classifier,
+        c,
+        ts_chunks,
+        dataset,
+        ts_info,
+        random_state,
+        regressor=regressor,
+        time_column=time_column,
+    )
+
+    quantified_dsts = run_test_quantification(
+        val_set,
+        test_sets,
+        dataset,
+        quantifier,
+        classifier,
+        c,
+        ts_info,
+        random_state,
+        regressor=regressor,
+        time_column=time_column,
+    )
+
+    return tsa_adjust_and_mae(
+        tsa,
+        quantified_dsts,
+        test_dsts,
+        inital_value,
+        val_pred_dists,
+        val_true,
+        c,
+        val_MSE,
+    )
+
+
+def aggregate_mean_over_seeds(seed_tables, metric_cols):
+    stack = np.stack([tbl[metric_cols].to_numpy() for tbl in seed_tables])
+    return np.nanmean(stack, axis=0)
+
+
+def annotate_best_method(df, method_names):
+    best_m = []
+    for i in range(len(df)):
+        row = df.iloc[i]
+        mini = float("inf")
+        m_num = -1
+        for col_num, name in enumerate(method_names):
+            v = row[name]
+            if pd.notna(v) and v < mini:
+                mini = v
+                m_num = col_num
+        best_m.append(method_names[m_num] if m_num >= 0 else "")
+    return best_m
+
+
+def run_textual_experiments():
     seed_tables = []
-    total_steps = len(seeds) * len(dataset_set) * len(qua_methods) * len(clsfiers)
-    pbar = tqdm(total=total_steps, desc=f"Experiment ({data_format})")
-    
+    total_steps = (
+        len(seeds)
+        * len(qua_methods)
+        * len(CLASSIFIERS)
+        * (len(TSA_methods) + 1)
+    )
+    pbar = tqdm(total=total_steps, desc="Experiment (global textual)")
+    columns = (
+        "Dataset",
+        "ExpType",
+        "QuaMethod",
+        "Classifier",
+        "QFY",
+        "MA",
+        "KFMA",
+    )
+
     for seed in seeds:
         idx = 0
-        outputfile = pd.DataFrame(
-            {
-                "Dataset": [],
-                "QuaMethod": [],
-                "Classifier": [],
-                "QFY": [],
-                "MA": [],
-                "KFMA": [],
-            }
-        )
-
-        for data_name in dataset_set:
+        outputfile = pd.DataFrame({col: [] for col in columns})
+        for exp_type in EXP_TYPES:
             for qua in qua_methods:
-                for mod in clsfiers:
-                    output = [data_name[0], qua, mod]
-                    for tsa_method in TSA_methods:
-                        res = experiment(data_name, mod, qua, tsa_method, seed)
-                        output.append(res)
-                    outputfile.loc[idx] = output
-                    idx = idx + 1
-                    pbar.update(1)
+                for clf in CLASSIFIERS:
+                    row = {
+                        "Dataset": DATASET[0],
+                        "ExpType": exp_type,
+                        "QuaMethod": qua,
+                        "Classifier": clf,
+                        "QFY": np.nan,
+                        "MA": np.nan,
+                        "KFMA": np.nan,
+                    }
+                    if exp_type == "original":
+                        for tsa in TSA_methods:
+                            row[tsa] = experiment(
+                                DATASET, clf, qua, tsa, seed, exp_type
+                            )
+                            pbar.update(1)
+                    else:
+                        row["QFY"] = experiment(
+                            DATASET, clf, qua, "QFY", seed, exp_type
+                        )
+                        pbar.update(1)
+                    outputfile.loc[idx] = row
+                    idx += 1
 
         seed_tables.append(outputfile)
     pbar.close()
 
-    num_rows = len(seed_tables[0])
-    num_methods = len(TSA_methods)
-    tot = np.zeros((num_rows, num_methods))
-    for i in range(len(seeds)):
-        res = seed_tables[i].to_numpy()[:, 3 : 3 + num_methods]
-        tot = tot + res
-    tot = tot / len(seeds)
-
-    tot_res = seed_tables[0].iloc[:, :3].copy()
-    for i, m in enumerate(TSA_methods):
+    metric_cols = ["QFY", "MA", "KFMA"]
+    tot = aggregate_mean_over_seeds(seed_tables, metric_cols)
+    tot_res = seed_tables[0][["Dataset", "ExpType", "QuaMethod", "Classifier"]].copy()
+    for i, m in enumerate(metric_cols):
         tot_res[m] = tot[:, i]
 
-    # Save quanti_results of one random case in to a table
-    TSF_results = tot_res.iloc[:, 3 : 3 + num_methods]
-    best_m = []
-    for i in range(len(TSF_results)):
-        mini = 1
-        m_num = -1
-        for col_num, cell in enumerate(TSF_results.iloc[i, :]):
-            if cell < mini:
-                mini = cell
-                m_num = col_num
-        best_m.append(TSA_methods[m_num])
-
-    tot_res["best_method"] = np.array(best_m)
-    tot_res.to_csv(config.OUTPUT_DIR / f"MAE_quanti_results_mean_{data_format}.csv")
-
-
-def sota_qot():
-    implementation = [
-        ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061", "CC", "QFY"],
-        ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061", "CC", "MA"],
-        ["None", "ReadMe2", "QFY"],
-        ["None", "ReadMe2", "KFMA"],
-    ]
-
-    outputfile = pd.DataFrame(
-        {
-            "QoT Method": [
-                text_senti_data[0][0],
-                text_senti_data[1][0],
-                text_senti_data[2][0],
-            ]
-        }
-    )
-
-    tot = np.zeros((3, 4))
-    total_steps = len(seeds) * len(text_senti_data) * len(implementation)
-    pbar = tqdm(total=total_steps, desc="SOTA Experiment")
-    
-    for seed in seeds:
-        for i, data_name in enumerate(text_senti_data):
-            for j, cond in enumerate(implementation):
-                res = experiment(data_name, cond[0], cond[1], cond[2], seed)
-                tot[i, j] += res
-                pbar.update(1)
-    
-    pbar.close()
-    tot = tot / len(seeds)
-
-    outputfile["CC"] = tot[:, 0]
-    outputfile["CC+MA"] = tot[:, 1]
-    outputfile["ReadMe2"] = tot[:, 2]
-    outputfile["ReadMe2+KFMA"] = tot[:, 3]
-
-    outputfile.to_csv(config.OUTPUT_DIR / "sota_qot_MAE_quanti_results_mean.csv")
+    TSF = tot_res[metric_cols]
+    best_m = annotate_best_method(TSF, TSA_methods)
+    tot_res["best_method"] = best_m
+    tot_res.to_csv(config.OUTPUT_DIR / "MAE_quanti_results_mean_global_textual.csv")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--run",
-        choices=["numeral", "textual", "sota_qot"],
-        default="textual",
-        help="Choose experiment",
+        choices=["global_textual"],
+        default="global_textual",
+        help="Run global Covid19 textual quantification experiment",
     )
     args = parser.parse_args()
-    if args.run == "sota_qot":
-        sota_qot()
-    else:
-        qot(args.run)
-
-    # qot('textual')
-    # qot('tabular')
-    # sota_qot()
+    run_textual_experiments()
