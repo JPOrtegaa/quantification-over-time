@@ -21,7 +21,8 @@ qua_methods = ["DyS", "DyS-Opt"]
 TSA_methods = ["QFY", "MA", "KFMA"]
 EXP_TYPES = ("original", "TOMS")
 REGRESSOR_TIME_COLUMN = "TweetAt"
-REGRESSOR_NAME = "LR"
+REGRESSOR_NAME = "TSMN"
+REGRESSOR_TSMN_KWARGS = {"tsmn_mode": "polynomial", "tsmn_degree": 3}
 unified_window = 4
 
 
@@ -44,7 +45,9 @@ def compute_initial_window_and_split(dataset, ts_chunks, ts_prevalence):
 
 def fit_time_classifier_output_regressor(val_set, classifier, classes, time_column, random_state):
     X, Y = qfy.prepare_regressor_training_arrays(val_set, classifier, classes, time_column)
-    return regression_trainingModel.trainer(X, Y, REGRESSOR_NAME, random_state)
+    return regression_trainingModel.trainer(
+        X, Y, REGRESSOR_NAME, random_state, **REGRESSOR_TSMN_KWARGS
+    )
 
 
 def run_validation_quantification(
