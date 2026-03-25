@@ -3,18 +3,145 @@ from quantifiers import DyS, DyS_Opt, ACC, GPAC, EDy
 from sklearn.metrics import confusion_matrix
 from classification import Classifying
 import pandas as pd
+from joblib import Parallel, delayed
 from utils import mse, mae
 import config
 
 
-def ACC_on_TSsets(val_set, test_set_dict, senti_model, classes):
-    val_y_res = Classifying.analyzer(val_set, senti_model, classes)
+def _effective_loky_jobs(n_tasks):
+    j = getattr(config, "TEST_CHUNK_LOKY_JOBS", -1)
+    if j == 1 or n_tasks <= 1:
+        return 1
+    return j
+
+
+def _analyze_test_chunks_parallel(test_set_dict, analyze_test, senti_model, classes, kind):
+    """
+    Executa analyze_test em cada chunk de teste em paralelo (backend loky).
+    kind: "scores" -> dict[i] = DataFrame de scores; "labels" -> dict[i] = pred labels;
+          "scores_arr" -> dict[i] = ndarray sem coluna true_y.
+    """
+    n = len(test_set_dict)
+    if n == 0:
+        return {}
+    n_jobs = _effective_loky_jobs(n)
+    if n_jobs == 1:
+        out = {}
+        for i in range(n):
+            lab, sc, _ = analyze_test(test_set_dict[i], senti_model, classes)
+            if kind == "scores":
+                out[i] = sc
+            elif kind == "labels":
+                out[i] = lab
+            elif kind == "scores_arr":
+                out[i] = sc.iloc[:, :-1].to_numpy()
+            else:
+                raise ValueError(f"unknown kind {kind!r}")
+        return out
+
+    def work(i):
+        lab, sc, _ = analyze_test(test_set_dict[i], senti_model, classes)
+        if kind == "scores":
+            return i, sc
+        if kind == "labels":
+            return i, lab
+        if kind == "scores_arr":
+            return i, sc.iloc[:, :-1].to_numpy()
+        raise ValueError(f"unknown kind {kind!r}")
+
+    pairs = Parallel(n_jobs=n_jobs, backend="loky")(
+        delayed(work)(i) for i in range(n)
+    )
+    return dict(pairs)
+
+
+def _time_column_to_X(time_series):
+    t = pd.to_datetime(time_series, errors="coerce")
+    if t.isna().any():
+        raise ValueError("Time column contains invalid or missing datetimes after parsing.")
+    return (t.astype("int64").to_numpy(dtype=np.float64) / 1e9).reshape(-1, 1)
+
+
+def _scores_from_regressor_time(df_text, classes, regressor, time_column):
+    if time_column not in df_text.columns:
+        raise KeyError(
+            f"Time column {time_column!r} not found in dataframe columns: {list(df_text.columns)}"
+        )
+    X = _time_column_to_X(df_text[time_column])
+    adjusted = regressor.predict(X)
+    adjusted = np.asarray(adjusted, dtype=np.float64)
+    if adjusted.ndim == 1:
+        adjusted = adjusted.reshape(-1, 1)
+    adjusted = np.clip(adjusted, 1e-8, None)
+    row_sums = adjusted.sum(axis=1, keepdims=True)
+    adjusted = adjusted / np.where(row_sums > 0, row_sums, 1.0)
+
+    df_y = df_text["label"].reset_index(drop=True).astype(int)
+    new_scores = pd.DataFrame({cl: adjusted[:, i] for i, cl in enumerate(classes)})
+    new_scores["true_y"] = df_y
+
+    class_cols = np.array(classes)
+    idx = np.argmax(adjusted, axis=1)
+    new_pred_y = class_cols[idx]
+    new_labels = pd.DataFrame({"pred_y": new_pred_y, "true_y": df_y.to_numpy()})
+    return new_labels, new_scores
+
+
+def analyzer_with_regressor(df_text, mod, classes, regressor, time_column):
+    _, pred_scores, metrics = Classifying.analyzer(df_text, mod, classes)
+    new_labels, new_scores = _scores_from_regressor_time(
+        df_text, classes, regressor, time_column
+    )
+    ty = pred_scores["true_y"].to_numpy()
+    new_scores["true_y"] = ty
+    new_labels["true_y"] = ty
+    return new_labels, new_scores, metrics
+
+
+def analyzer_regressor_test_only(df_text, mod, classes, regressor, time_column):
+    """Scores só a partir de tempo + regressor (sem inferência HF). `mod` ignorado."""
+    new_labels, new_scores = _scores_from_regressor_time(
+        df_text, classes, regressor, time_column
+    )
+    return new_labels, new_scores, [0.0, 0.0]
+
+
+def make_analyze_fn(regressor, time_column):
+    def analyze_fn(df_text, mod, classes):
+        return analyzer_with_regressor(df_text, mod, classes, regressor, time_column)
+
+    return analyze_fn
+
+
+def make_analyze_fn_test_regressor_only(regressor, time_column):
+    def analyze_fn(df_text, mod, classes):
+        return analyzer_regressor_test_only(df_text, mod, classes, regressor, time_column)
+
+    return analyze_fn
+
+
+def prepare_regressor_training_arrays(val_set, classifier, classes, time_column):
+    _, pred_scores, _ = Classifying.analyzer(val_set, classifier, classes)
+    if time_column not in val_set.columns:
+        raise KeyError(
+            f"time column {time_column!r} not found; available: {list(val_set.columns)}"
+        )
+    X = _time_column_to_X(val_set[time_column])
+    Y = pred_scores[[cl for cl in classes]].to_numpy()
+    return X, Y
+
+
+def ACC_on_TSsets(
+    val_set, test_set_dict, senti_model, classes, analyze_fn=None, analyze_fn_test=None
+):
+    analyze_val = analyze_fn or Classifying.analyzer
+    analyze_test = analyze_fn_test or analyze_val
+    val_y_res = analyze_val(val_set, senti_model, classes)
     val_y_ = val_y_res[0]
 
-    tests_y_ = {}
-    for i in range(len(test_set_dict)):
-        test_y_ = Classifying.analyzer(test_set_dict[i], senti_model, classes)[0]
-        tests_y_[i] = test_y_
+    tests_y_ = _analyze_test_chunks_parallel(
+        test_set_dict, analyze_test, senti_model, classes, "labels"
+    )
 
     qtfied_distribution = []
     for i, cla in enumerate(classes):
@@ -47,14 +174,17 @@ def ACC_on_TSsets(val_set, test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def DyS_on_TSsets(val_set, test_set_dict, senti_model, classes):
-    val_y_res = Classifying.analyzer(val_set, senti_model, classes)
+def DyS_on_TSsets(
+    val_set, test_set_dict, senti_model, classes, analyze_fn=None, analyze_fn_test=None
+):
+    analyze_val = analyze_fn or Classifying.analyzer
+    analyze_test = analyze_fn_test or analyze_val
+    val_y_res = analyze_val(val_set, senti_model, classes)
     val_score = val_y_res[1]
 
-    tests_scores = {}
-    for i in range(len(test_set_dict)):
-        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
-        tests_scores[i] = test_score
+    tests_scores = _analyze_test_chunks_parallel(
+        test_set_dict, analyze_test, senti_model, classes, "scores"
+    )
 
     qtfied_distribution = []
     for i, cla in enumerate(classes):
@@ -79,14 +209,23 @@ def DyS_on_TSsets(val_set, test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def DyS_Opt_on_TSsets(val_set, test_set_dict, senti_model, classes, stride_ratio=0.05):
-    val_y_res = Classifying.analyzer(val_set, senti_model, classes)
+def DyS_Opt_on_TSsets(
+    val_set,
+    test_set_dict,
+    senti_model,
+    classes,
+    stride_ratio=0.05,
+    analyze_fn=None,
+    analyze_fn_test=None,
+):
+    analyze_val = analyze_fn or Classifying.analyzer
+    analyze_test = analyze_fn_test or analyze_val
+    val_y_res = analyze_val(val_set, senti_model, classes)
     val_score = val_y_res[1]
 
-    tests_scores = {}
-    for i in range(len(test_set_dict)):
-        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
-        tests_scores[i] = test_score
+    tests_scores = _analyze_test_chunks_parallel(
+        test_set_dict, analyze_test, senti_model, classes, "scores"
+    )
 
     qtfied_distribution = []
     for i, cla in enumerate(classes):
@@ -120,55 +259,85 @@ def DyS_Opt_on_TSsets(val_set, test_set_dict, senti_model, classes, stride_ratio
     return qtfied_distribution
 
 
-def GPAC_on_TSsets(val_set, test_set_dict, senti_model, classes):
-    val_res = Classifying.analyzer(val_set, senti_model, classes)
+def GPAC_on_TSsets(
+    val_set, test_set_dict, senti_model, classes, analyze_fn=None, analyze_fn_test=None
+):
+    analyze_val = analyze_fn or Classifying.analyzer
+    analyze_test = analyze_fn_test or analyze_val
+    val_res = analyze_val(val_set, senti_model, classes)
     val_scores = val_res[1].iloc[:, :-1].to_numpy()
     val_labels = val_res[0]
 
-    tests_scores = {}
-    for i in range(len(test_set_dict)):
-        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
-        tests_scores[i] = test_score.iloc[:, :-1].to_numpy()
+    tests_scores = _analyze_test_chunks_parallel(
+        test_set_dict, analyze_test, senti_model, classes, "scores_arr"
+    )
 
-    qtfied_distribution = []
-    for j in range(len(test_set_dict)):
-        qua_prev = GPAC(
-            val_scores, tests_scores[j], val_labels["true_y"].to_numpy(), classes
+    n_test = len(test_set_dict)
+    nj = _effective_loky_jobs(n_test)
+    val_y_np = val_labels["true_y"].to_numpy()
+    if nj == 1:
+        qtfied_distribution = [
+            GPAC(val_scores, tests_scores[j], val_y_np, classes) for j in range(n_test)
+        ]
+    else:
+
+        def gpac_j(j):
+            return j, GPAC(val_scores, tests_scores[j], val_y_np, classes)
+
+        pairs = Parallel(n_jobs=nj, backend="loky")(
+            delayed(gpac_j)(j) for j in range(n_test)
         )
-        qtfied_distribution.append(qua_prev)
+        pairs.sort(key=lambda x: x[0])
+        qtfied_distribution = [p[1] for p in pairs]
 
     qtfied_distribution = np.array(qtfied_distribution)
 
     return qtfied_distribution
 
 
-def EDy_on_TSsets(val_set, test_set_dict, senti_model, classes):
-    val_res = Classifying.analyzer(val_set, senti_model, classes)
+def EDy_on_TSsets(
+    val_set, test_set_dict, senti_model, classes, analyze_fn=None, analyze_fn_test=None
+):
+    analyze_val = analyze_fn or Classifying.analyzer
+    analyze_test = analyze_fn_test or analyze_val
+    val_res = analyze_val(val_set, senti_model, classes)
     val_scores = val_res[1].iloc[:, :-1].to_numpy()
     val_labels = val_res[0]
 
-    tests_scores = {}
-    for i in range(len(test_set_dict)):
-        test_score = Classifying.analyzer(test_set_dict[i], senti_model, classes)[1]
-        tests_scores[i] = test_score.iloc[:, :-1].to_numpy()
+    tests_scores = _analyze_test_chunks_parallel(
+        test_set_dict, analyze_test, senti_model, classes, "scores_arr"
+    )
 
-    qtfied_distribution = []
-    for j in range(len(test_set_dict)):
-        qua_prev = EDy(
-            val_scores, val_labels["true_y"].to_numpy(), tests_scores[j], classes
+    n_test = len(test_set_dict)
+    nj = _effective_loky_jobs(n_test)
+    val_y_np = val_labels["true_y"].to_numpy()
+    if nj == 1:
+        qtfied_distribution = [
+            EDy(val_scores, val_y_np, tests_scores[j], classes) for j in range(n_test)
+        ]
+    else:
+
+        def edy_j(j):
+            return j, EDy(val_scores, val_y_np, tests_scores[j], classes)
+
+        pairs = Parallel(n_jobs=nj, backend="loky")(
+            delayed(edy_j)(j) for j in range(n_test)
         )
-        qtfied_distribution.append(qua_prev)
+        pairs.sort(key=lambda x: x[0])
+        qtfied_distribution = [p[1] for p in pairs]
 
     qtfied_distribution = np.array(qtfied_distribution)
 
     return qtfied_distribution
 
 
-def CC_on_TSsets(test_set_dict, senti_model, classes):
-    tests_y_ = {}
-    for i in range(len(test_set_dict)):
-        test_y_ = Classifying.analyzer(test_set_dict[i], senti_model, classes)[0]
-        tests_y_[i] = test_y_
+def CC_on_TSsets(
+    test_set_dict, senti_model, classes, analyze_fn=None, analyze_fn_test=None
+):
+    analyze_test = analyze_fn_test or analyze_fn or Classifying.analyzer
+    tests_y_ = _analyze_test_chunks_parallel(
+        test_set_dict, analyze_test, senti_model, classes, "labels"
+    )
 
     qtfied_distribution = []
     for j in range(len(test_set_dict)):
@@ -185,7 +354,24 @@ def CC_on_TSsets(test_set_dict, senti_model, classes):
     return qtfied_distribution
 
 
-def getMAE_val_set(val_set, qua, mod, c, data, name, stride_ratio, random_seed):
+def getMAE_val_set(
+    val_set,
+    qua,
+    mod,
+    c,
+    data,
+    name,
+    stride_ratio,
+    random_seed,
+    regressor=None,
+    time_column=None,
+):
+    analyze_fn = None
+    if regressor is not None:
+        if time_column is None:
+            raise ValueError("time_column is required when regressor is provided")
+        analyze_fn = make_analyze_fn(regressor, time_column)
+
     subsamples_dict = {}
     subsamples_dsts = []
     for i in range(name[1]):
@@ -206,17 +392,19 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, stride_ratio, random_seed):
     val_MAE, val_MSE, sep_MAE, qtfd_dsts = None, None, None, None
 
     if qua == "DyS":
-        qtfd_dsts = DyS_on_TSsets(val_set, subsamples_dict, mod, c)
+        qtfd_dsts = DyS_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "DyS-Opt":
-        qtfd_dsts = DyS_Opt_on_TSsets(val_set, subsamples_dict, mod, c, stride_ratio=stride_ratio)
+        qtfd_dsts = DyS_Opt_on_TSsets(
+            val_set, subsamples_dict, mod, c, stride_ratio=stride_ratio, analyze_fn=analyze_fn
+        )
     elif qua == "ACC":
-        qtfd_dsts = ACC_on_TSsets(val_set, subsamples_dict, mod, c)
+        qtfd_dsts = ACC_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "GPAC":
-        qtfd_dsts = GPAC_on_TSsets(val_set, subsamples_dict, mod, c)
+        qtfd_dsts = GPAC_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "EDy":
-        qtfd_dsts = EDy_on_TSsets(val_set, subsamples_dict, mod, c)
+        qtfd_dsts = EDy_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "CC":
-        qtfd_dsts = CC_on_TSsets(subsamples_dict, mod, c)
+        qtfd_dsts = CC_on_TSsets(subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "ReadMe2":
         val_preds_path = (
             config.README_IMPLEMENT_DIR
@@ -233,9 +421,29 @@ def getMAE_val_set(val_set, qua, mod, c, data, name, stride_ratio, random_seed):
     return val_MAE, val_MSE, sep_MAE, qtfd_dsts
 
 
-def qtfied_dists(valset, data_dict, dataname, qua, mod, c, stride_ratio, random_seed):
+def qtfied_dists(
+    valset,
+    data_dict,
+    dataname,
+    qua,
+    mod,
+    c,
+    stride_ratio,
+    random_seed,
+    regressor=None,
+    time_column=None,
+):
+    analyze_fn = None
+    analyze_fn_test = None
+    if regressor is not None:
+        if time_column is None:
+            raise ValueError("time_column is required when regressor is provided")
+        analyze_fn = make_analyze_fn(regressor, time_column)
+        analyze_fn_test = make_analyze_fn_test_regressor_only(regressor, time_column)
 
     try:
+        if regressor is not None:
+            raise IOError("bypass disk cache when time regressor is used")
         results_file = (
             config.QUANT_RESULTS_DIR
             / f"_{dataname[0]}"
@@ -252,17 +460,55 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, stride_ratio, random_
     except IOError:
         quantified_dsts = 0
         if qua == "DyS":
-            quantified_dsts = DyS_on_TSsets(valset, data_dict, mod, c)
+            quantified_dsts = DyS_on_TSsets(
+                valset,
+                data_dict,
+                mod,
+                c,
+                analyze_fn=analyze_fn,
+                analyze_fn_test=analyze_fn_test,
+            )
         elif qua == "DyS-Opt":
-            quantified_dsts = DyS_Opt_on_TSsets(valset, data_dict, mod, c, stride_ratio=stride_ratio)
+            quantified_dsts = DyS_Opt_on_TSsets(
+                valset,
+                data_dict,
+                mod,
+                c,
+                stride_ratio=stride_ratio,
+                analyze_fn=analyze_fn,
+                analyze_fn_test=analyze_fn_test,
+            )
         elif qua == "ACC":
-            quantified_dsts = ACC_on_TSsets(valset, data_dict, mod, c)
+            quantified_dsts = ACC_on_TSsets(
+                valset,
+                data_dict,
+                mod,
+                c,
+                analyze_fn=analyze_fn,
+                analyze_fn_test=analyze_fn_test,
+            )
         elif qua == "GPAC":
-            quantified_dsts = GPAC_on_TSsets(valset, data_dict, mod, c)
+            quantified_dsts = GPAC_on_TSsets(
+                valset,
+                data_dict,
+                mod,
+                c,
+                analyze_fn=analyze_fn,
+                analyze_fn_test=analyze_fn_test,
+            )
         elif qua == "EDy":
-            quantified_dsts = EDy_on_TSsets(valset, data_dict, mod, c)
+            quantified_dsts = EDy_on_TSsets(
+                valset,
+                data_dict,
+                mod,
+                c,
+                analyze_fn=analyze_fn,
+                analyze_fn_test=analyze_fn_test,
+            )
         elif qua == "CC":
-            quantified_dsts = CC_on_TSsets(data_dict, mod, c)
+            quantified_dsts = CC_on_TSsets(
+                data_dict, mod, c, analyze_fn=analyze_fn, analyze_fn_test=analyze_fn_test
+            )
         elif qua == "ReadMe2":
             test_preds_path = (
                 config.README_IMPLEMENT_DIR
@@ -287,6 +533,7 @@ def qtfied_dists(valset, data_dict, dataname, qua, mod, c, stride_ratio, random_
         results_file = (
             dataset_folder / f"{qua}-{str(mod)[:6]}-{dataname[0]}-{dataname[1]}.csv"
         )
-        pd_quantified_dsts.to_csv(results_file)
+        if regressor is None:
+            pd_quantified_dsts.to_csv(results_file)
 
     return quantified_dsts

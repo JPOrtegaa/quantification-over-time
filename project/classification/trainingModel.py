@@ -1,5 +1,6 @@
 
 # Classifiers
+import config
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
@@ -10,11 +11,12 @@ from sklearn.svm import SVC
 
 def trainer(train_x, train_y, model_name, seed):
 
+    nj = getattr(config, "SKLEARN_N_JOBS", 1)
     classifier = None
     if model_name == "LR":
-        classifier = LogisticRegression(n_jobs=-1, random_state=seed)
+        classifier = LogisticRegression(n_jobs=nj, random_state=seed)
     elif model_name == "RF":
-        classifier = RandomForestClassifier(n_jobs=-1, random_state=seed)
+        classifier = RandomForestClassifier(n_jobs=nj, random_state=seed)
     elif model_name == "NB":
         classifier = GaussianNB()
     elif model_name == "SVC":
