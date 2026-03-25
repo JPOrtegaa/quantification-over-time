@@ -2,6 +2,9 @@ from transformers import AutoModelForSequenceClassification
 from transformers import AutoTokenizer, AutoConfig
 import numpy as np
 from scipy.special import softmax
+from tqdm import tqdm
+
+import config
 # Preprocess text (username and link placeholders)
 
 
@@ -46,11 +49,25 @@ class SentiAnalyzer:
 
         return scores, l
 
-    def batch_analyze(self, texts, batch_size=32):
+    def batch_analyze(self, texts, batch_size=None, show_progress=True):
+        if batch_size is None:
+            batch_size = getattr(config, "HF_INFERENCE_BATCH_SIZE", 8)
         all_scores = []
         all_labels = []
 
-        for i in range(0, len(texts), batch_size):
+        n = len(texts)
+        num_batches = (n + batch_size - 1) // batch_size if n else 0
+        batch_indices = range(0, n, batch_size)
+        if show_progress and num_batches > 0:
+            batch_indices = tqdm(
+                batch_indices,
+                total=num_batches,
+                desc="HF inference",
+                unit="batch",
+                leave=False,
+            )
+
+        for i in batch_indices:
             batch_texts = texts[i : i + batch_size]
             batch_texts = [SentiAnalyzer.preprocess(str(x)) for x in batch_texts]
             encoded_input = self.tokenizer(
