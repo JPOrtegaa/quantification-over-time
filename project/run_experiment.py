@@ -1,8 +1,9 @@
 import argparse
+import re
 import warnings
 
 import config
-import data_loading
+import data_loading as data_loading
 import numpy as np
 import pandas as pd
 import quantifications as qfy
@@ -18,7 +19,7 @@ seeds = [1, 2, 3]
 # Janelas temporais iniciais usadas como validação (treino do regressor / referência quantificação).
 VAL_LENGTH = 15
 # Após o split, no máximo estes chunks entram como teste temporal (corta a série no fim).
-MAX_TEST_CHUNKS = 10
+MAX_TEST_CHUNKS = 5000
 DATASET = ("global_covid19_tweets", VAL_LENGTH)
 CLASSIFIERS = ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"]
 qua_methods = ["DyS", "DyS-Opt"]
@@ -27,7 +28,7 @@ TSA_methods = ["QFY", "MA", "KFMA"]
 EXP_TYPES = ["TOMS"]
 REGRESSOR_TIME_COLUMN = "TweetAt"
 REGRESSOR_NAME = "TSMN"
-REGRESSOR_TSMN_KWARGS = {"tsmn_mode": "cyclic", "tsmn_degree": 3}
+REGRESSOR_TSMN_KWARGS = {"tsmn_mode": "polynomial", "tsmn_degree": 3}
 unified_window = 4
 
 _LOG_PREFIX = "[run_experiment]"
@@ -235,6 +236,16 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
         compute_initial_window_and_split(dataset, ts_chunks, ts_prevalence)
     )
 
+    clf_slug = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(classifier))[:80]
+    clf_out = (
+        config.OUTPUT_CLASSIFICATION_DIR
+        / f"classifier_window_scores_{dataset[0]}_{quantifier}_seed{random_state}_{clf_slug}.csv"
+    )
+    qfy.write_classifier_window_scores_table(
+        ts_chunks, c, classifier, val_length=dataset[1], out_path=clf_out
+    )
+    _log(f"Tabela de scores do classificador por janela salva em {clf_out}.")
+
     regressor = None
     time_column = None
     if exp_type == "TOMS":
@@ -242,6 +253,19 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
             val_set, classifier, c, REGRESSOR_TIME_COLUMN, random_state
         )
         time_column = REGRESSOR_TIME_COLUMN
+        reg_out = (
+            config.OUTPUT_REGRESSOR_DIR
+            / f"regressor_window_scores_{dataset[0]}_{quantifier}_seed{random_state}_{clf_slug}.csv"
+        )
+        qfy.write_regressor_window_scores_table(
+            ts_chunks,
+            c,
+            regressor,
+            REGRESSOR_TIME_COLUMN,
+            val_length=dataset[1],
+            out_path=reg_out,
+        )
+        _log(f"Tabela de scores do regressor por janela salva em {reg_out}.")
 
     val_MAE, val_MSE, sep_mae, val_pred_dists = run_validation_quantification(
         val_set,

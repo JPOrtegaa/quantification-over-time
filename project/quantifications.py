@@ -1,4 +1,5 @@
 import numpy as np
+from pathlib import Path
 from quantifiers import DyS, DyS_Opt, ACC, GPAC, EDy
 from sklearn.metrics import confusion_matrix
 from classification import Classifying
@@ -56,10 +57,20 @@ def _analyze_test_chunks_parallel(test_set_dict, analyze_test, senti_model, clas
 
 
 def _time_column_to_X(time_series):
-    t = pd.to_datetime(time_series, errors="coerce")
+    """
+    Converte a coluna temporal em valores numéricos em **dias** (epoch UNIX em dias,
+    não segundos). Suporta datas completas e strings 'MM-DD' do loader antigo do Covid.
+    """
+    s = time_series if isinstance(time_series, pd.Series) else pd.Series(time_series)
+    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    if t.isna().any():
+        mmdd = s.astype(str).str.strip() + "-2000"
+        t_fallback = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
+        t = t.where(~t.isna(), t_fallback)
     if t.isna().any():
         raise ValueError("Time column contains invalid or missing datetimes after parsing.")
-    return (t.astype("int64").to_numpy(dtype=np.float64) / 1e9).reshape(-1, 1)
+    ns = t.astype("int64").to_numpy(dtype=np.float64)
+    return (ns / (86400.0 * 1e9)).reshape(-1, 1)
 
 
 def _scores_from_regressor_time(df_text, classes, regressor, time_column):
@@ -129,6 +140,81 @@ def prepare_regressor_training_arrays(val_set, classifier, classes, time_column)
     X = _time_column_to_X(val_set[time_column])
     Y = pred_scores[[cl for cl in classes]].to_numpy()
     return X, Y
+
+
+def write_regressor_window_scores_table(
+    ts_chunks,
+    classes,
+    regressor,
+    time_column,
+    val_length,
+    out_path,
+):
+    """
+    Uma linha por janela (chunk) em ordem temporal: colunas meta + score médio do
+    regressor por classe (média das probabilidades ao longo das instâncias da janela).
+    """
+    rows = []
+    for wi in sorted(ts_chunks.keys()):
+        df = ts_chunks[wi]
+        if time_column not in df.columns:
+            raise KeyError(
+                f"time column {time_column!r} missing in window {wi}; "
+                f"columns={list(df.columns)}"
+            )
+        X = _time_column_to_X(df[time_column])
+        pred = regressor.predict(X)
+        pred = np.asarray(pred, dtype=np.float64)
+        if pred.ndim == 1:
+            pred = pred.reshape(-1, 1)
+        pred = np.clip(pred, 1e-8, None)
+        rs = pred.sum(axis=1, keepdims=True)
+        pred = pred / np.where(rs > 0, rs, 1.0)
+        mean_scores = pred.mean(axis=0)
+        split = "val" if wi < val_length else "test"
+        row = {
+            "window_index": wi,
+            "split": split,
+            "n_samples": int(len(df)),
+        }
+        for i, cl in enumerate(classes):
+            row[f"score_{cl}"] = float(mean_scores[i])
+        rows.append(row)
+    out_df = pd.DataFrame(rows)
+    path = Path(out_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out_df.to_csv(path, index=False)
+
+
+def write_classifier_window_scores_table(
+    ts_chunks,
+    classes,
+    classifier,
+    val_length,
+    out_path,
+):
+    """
+    Uma linha por janela: mesma convenção que write_regressor_window_scores_table,
+    com score médio do classificador (HF etc.) por classe em cada chunk.
+    """
+    rows = []
+    for wi in sorted(ts_chunks.keys()):
+        df = ts_chunks[wi]
+        _, pred_scores, _ = Classifying.analyzer(df, classifier, classes)
+        mean_scores = pred_scores[[cl for cl in classes]].mean(axis=0).to_numpy()
+        split = "val" if wi < val_length else "test"
+        row = {
+            "window_index": wi,
+            "split": split,
+            "n_samples": int(len(df)),
+        }
+        for i, cl in enumerate(classes):
+            row[f"score_{cl}"] = float(mean_scores[i])
+        rows.append(row)
+    out_df = pd.DataFrame(rows)
+    path = Path(out_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out_df.to_csv(path, index=False)
 
 
 def ACC_on_TSsets(

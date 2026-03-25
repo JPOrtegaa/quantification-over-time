@@ -13,6 +13,8 @@ DATA_DIR = PROJECT_ROOT.parent / "time series qua"
 
 # Output directories
 OUTPUT_DIR = PROJECT_ROOT / "output_files"
+OUTPUT_REGRESSOR_DIR = PROJECT_ROOT / "output_regressor"
+OUTPUT_CLASSIFICATION_DIR = PROJECT_ROOT / "output_classification"
 QUANT_RESULTS_DIR = PROJECT_ROOT / "quant_results"
 PLOTS_DIR = PROJECT_ROOT / "plots"
 README_IMPLEMENT_DIR = PROJECT_ROOT / "ReadMe_Implement"
@@ -23,7 +25,7 @@ README_IMPLEMENT_DIR = PROJECT_ROOT / "ReadMe_Implement"
 TEST_CHUNK_LOKY_JOBS = int(os.environ.get("QUA_TEST_CHUNK_JOBS", "1"))
 
 # Tamanho do batch na inferência Hugging Face (menor -> menos pico de RAM).
-HF_INFERENCE_BATCH_SIZE = int(os.environ.get("QUA_HF_BATCH_SIZE", "8"))
+HF_INFERENCE_BATCH_SIZE = int(os.environ.get("QUA_HF_BATCH_SIZE", "1000"))
 
 # LinearRegression, LogisticRegression, RandomForest, etc.
 SKLEARN_N_JOBS = int(os.environ.get("QUA_SKLEARN_N_JOBS", "1"))
@@ -31,7 +33,13 @@ SKLEARN_N_JOBS = int(os.environ.get("QUA_SKLEARN_N_JOBS", "1"))
 
 # Ensure directories exist
 def ensure_dirs():
-    for d in [OUTPUT_DIR, QUANT_RESULTS_DIR, PLOTS_DIR]:
+    for d in [
+        OUTPUT_DIR,
+        OUTPUT_REGRESSOR_DIR,
+        OUTPUT_CLASSIFICATION_DIR,
+        QUANT_RESULTS_DIR,
+        PLOTS_DIR,
+    ]:
         d.mkdir(parents=True, exist_ok=True)
 
 

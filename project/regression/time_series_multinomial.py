@@ -10,7 +10,7 @@ def softmax(z):
 
 class TimeSeriesMultinomialRegressor:
     """
-    Regressor that maps Unix timestamps (seconds) to a probability simplex via
+    Regressor that maps time values (e.g. days since Unix epoch) to a probability simplex via
     logits = X @ C and probs = softmax(logits). Features X are built from time
     with optional linear / polynomial / cyclic bases; time is min–max normalized
     using statistics stored at fit time.
@@ -65,7 +65,7 @@ class TimeSeriesMultinomialRegressor:
 
     def fit(self, t_series, Y_soft):
         """
-        t_series: timestamps in seconds (1d or column vector)
+        t_series: time coordinate in days or other float scale (1d or column vector)
         Y_soft: (n_samples, n_classes) soft targets on the simplex (e.g. classifier probs)
         """
         self.t_min_ = None
@@ -94,6 +94,6 @@ class TimeSeriesMultinomialRegressor:
         return softmax(logits)
 
     def predict(self, X):
-        """Sklearn-style API: X is (n, 1) Unix seconds, as from _time_column_to_X."""
+        """Sklearn-style API: X is (n, 1) time values, as from _time_column_to_X."""
         X = np.asanyarray(X, dtype=np.float64)
         return self.predict_proba(X.ravel())
