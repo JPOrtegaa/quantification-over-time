@@ -10,7 +10,7 @@ def trainer(train_L, train_predictions, model_name, seed, **trainer_kw):
         regressor = LinearRegression(n_jobs=getattr(config, "SKLEARN_N_JOBS", 1))
         regressor.fit(train_L, train_predictions)
         return regressor
-
+    
     if model_name == "TSMN":
         mode = trainer_kw.get("tsmn_mode", "polynomial")
         degree = trainer_kw.get("tsmn_degree", 3)

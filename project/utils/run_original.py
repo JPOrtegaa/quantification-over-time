@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import quantifications as qfy
 import utils
-from classification import trainingModel
+from methods.classification import trainingModel
 from time_series_adjustment import KalmanMA, MovingAverage
 from tqdm import tqdm
 from utils import params_KFMA
@@ -205,7 +205,7 @@ def qot(data_format):
         best_m.append(TSA_methods[m_num])
 
     tot_res["best_method"] = np.array(best_m)
-    tot_res.to_csv(config.OUTPUT_DIR / f"MAE_quanti_results_mean_{data_format}.csv")
+    tot_res.to_csv(config.QUANT_RESULTS_DIR / f"MAE_quanti_results_mean_{data_format}.csv")
 
 
 def sota_qot():
@@ -245,7 +245,7 @@ def sota_qot():
     outputfile["ReadMe2"] = tot[:, 2]
     outputfile["ReadMe2+KFMA"] = tot[:, 3]
 
-    outputfile.to_csv(config.OUTPUT_DIR / "sota_qot_MAE_quanti_results_mean.csv")
+    outputfile.to_csv(config.QUANT_RESULTS_DIR / "sota_qot_MAE_quanti_results_mean.csv")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,3 @@
+# Optional deps for the Streamlit dashboard (install in your venv alongside the main project).
+streamlit>=1.28.0
+plotly>=5.18.0

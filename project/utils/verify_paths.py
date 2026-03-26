@@ -1,9 +1,9 @@
 import sys
 from pathlib import Path
 
-# Add project root to sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent
-sys.path.append(str(PROJECT_ROOT))
+# Add project root to sys.path (this file lives in project/utils/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 import config
 # import run_experiment # Avoid running the whole experiment on import if possible

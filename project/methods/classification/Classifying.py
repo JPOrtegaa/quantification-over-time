@@ -39,7 +39,7 @@ def analyzer(df_text, mod, classes, hf_context=None):
         pass
     _hf_ctx = " · ".join(_parts) if _parts else None
 
-    # PART 1: text classification for twiiter datasets
+    # PART 1: text classification for Twitter datasets
     if type(mod) == str:
         df_x = df_text["text"].to_list()
         df_y = df_text["label"].reset_index(drop=True).astype(int)

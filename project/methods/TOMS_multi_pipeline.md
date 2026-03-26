@@ -1,51 +1,56 @@
-# Pipeline TOMS com K regressores (um por classe)
+# TOMS pipeline with K regressors (one per class)
 
-Este documento descreve o que o código faz após a alteração para o modo **TOMS multi-regressor**, usado em `run_experiment.py` com `EXP_TYPES = ["TOMS"]`.
+This document describes the code behaviour for **TOMS multi-regressor** mode, as used in `run_experiment.py` with `EXP_TYPES = ["TOMS"]`.
 
-## 1. Tempo `t` único por janela
+## 1. Single scalar time `t` per window
 
-- Cada **janela** é um elemento de `ts_chunks[i]` (um DataFrame com todos os tweets daquele intervalo temporal).
-- Para a coluna temporal (`TweetAt` no Covid), convertemos todas as linhas do chunk para **dias desde o epoch UNIX** (mesma regra que `quantifications._time_column_to_X`).
-- O **único** `t` associado à janela `i` é a **mediana** desses valores: é robusto se houver ruído e coincide com o valor único quando todos os tweets do chunk partilham a mesma data (caso típico do loader antigo por dia).
-- Esse mapa `window_t[i]` é guardado no `TOMSMultiRegressorBundle` e usado em todo o treino e nas matrizes `M` em validação/teste (log).
+- Each **window** is one element of `ts_chunks[i]` (a DataFrame of all tweets in that time interval).
+- For the time column (`TweetAt` on the Covid setup), all rows in the chunk are converted to **days since the UNIX epoch** (same rule as `quantifications._time_column_to_X`).
+- The **single** `t` for window `i` is the **median** of those values: robust to noise and equal to the single value when every tweet in the chunk shares one date (typical day-based loader).
+- The map `window_t[i]` is stored in `TOMSMultiRegressorBundle` and used for training and for matrices `M` in validation/test logging.
 
-## 2. Coluna `_window_id` no conjunto de validação
+## 2. `_window_id` column on the validation set
 
-- `val_set` é a concatenação dos chunks `0 .. val_length-1` (função `utils.val_test_split`).
-- Atribuímos `val_set["_window_id"]` de modo que cada linha sabe a que janela pertence (`attach_window_ids`), para reutilizar exatamente o `t` mediano dessa janela.
+- `val_set` is the concatenation of chunks `0 .. val_length-1` (from `utils.val_test_split`).
+- We set `val_set["_window_id"]` so each row knows its window (`attach_window_ids`), matching the median `t` of that window.
 
-## 3. Treino: K regressores `TimeSeriesMultinomialRegressor`
+## 3. Training: K `TimeSeriesMultinomialRegressor` models
 
-- Com o classificador HF, obtemos as **probabilidades moles** `Y` em todo o `val_set` (`Classifying.analyzer`).
-- Para cada classe `c_k` (índice `k = 0..K-1` na ordem de `classes`):
-  - Filtramos apenas as linhas com **rótulo verdadeiro** `label == c_k`.
-  - **Entrada**: vetor `t` onde cada amostra usa o escalar `window_t[_window_id da linha]` (o mesmo `t` para todas as linhas da mesma janela, replicado por linha).
-  - **Alvo**: as linhas correspondentes de `Y`, ou seja **vetores de dimensão K** (scores do classificador para todas as classes), como no TOMS original — cada regressor continua a prever um simplex sobre **todas** as classes.
-- Se uma classe não tiver amostras no `val_set`, é instalado um regressor **uniforme** (`1/K` para todas as classes).
-- Os modelos são treinados via `regression.trainingModel.trainer` com `REGRESSOR_NAME` (ex.: `"TSMN"`).
+- Using the HF classifier, we obtain soft probabilities `Y` on the full `val_set` (`Classifying.analyzer`).
+- For each class `c_k` (index `k = 0..K-1` in `classes` order):
+  - Keep only rows whose **true label** is `label == c_k`.
+  - **Input**: vector `t` where each sample uses `window_t[line's _window_id]` (same `t` for all lines in a window).
+  - **Target**: the corresponding rows of `Y`, i.e. **K-dimensional** classifier scores — each regressor still predicts a simplex over **all** classes.
+- If a class has no samples in `val_set`, a **uniform** constant regressor is used (`1/K` for all classes).
+- Models are trained via `methods.regression.trainingModel.trainer` with `REGRESSOR_NAME` (e.g. `"TSMN"`).
 
-## 4. Matriz `M` (K × K) num instante `t`
+## 4. Matrix `M` (K x K) at time `t`
 
-- Para um escalar `t_w` (tempo da janela):
-  - Para cada `k`, o regressor `k` devolve um vetor de probabilidades de dimensão `K`.
-  - Empilhamos essas `K` linhas numa matriz **`M`**, com shape **(K, K)** — linha `k` = saída normalizada do regressor associado à classe `k`.
+- For scalar `t_w` (window time):
+  - For each `k`, regressor `k` returns a `K`-dimensional probability vector.
+  - Stack these `K` rows into **`M`**, shape **(K, K)** — row `k` is the normalized output of the regressor for class `k`.
 
-## 5. Scores para o quantificador na **validação**
+## 5. Quantification with TOMS (per-window calibration from **M**)
 
-- Para **cada linha** do `val_set`, obtemos `t` pela janela, calculamos `M`, e o vetor de scores alimentado ao DyS / DyS-Opt / etc. é a **média das linhas de `M`**, **renormalizada** para somar 1 (mistura equiprovável das previsões dos K regressores).
-- O analisador `analyzer_toms_multi_val` **não** volta a chamar o HF para estes scores de validação (apenas foi usado para construir os alvos `Y` no treino dos regressores).
+- The `val_set` with HF `Y` and `_window_id` is used **only** to **train** the K regressors (section 3). Regressor scores derived from `M` over every line of `val_set` are **not** used as the quantifier reference anymore.
+- For **each** window (time chunk with global index `wi`):
+  - Compute **one** matrix `M` with `score_matrix_at_t(bundle, window_t[wi])`.
+  - Build a synthetic calibration set of **K rows**: row `k` = `M[k, :]` (regressor `k` output), synthetic true label = `classes[k]` (`quantifications.val_labels_scores_from_toms_matrix`).
+  - **Document scores** for the window (the “test” side of DyS/ACC/etc.) always come from the **HF classifier** (`Classifying.analyzer`), aggregated per chunk as before.
+- In the **test** phase (`qtfied_dists`), `base_wi = val_length`: for test chunk `j`, use `M` at time `window_t[val_length + j]`.
+- In **validation MAE** (`getMAE_val_set`), chunks are validation windows and `base_wi = 0`: for chunk `j`, use `M` at `window_t[j]` (that validation window's time), keeping the metric time-consistent.
 
-## 6. Scores na fase de **teste**
+## 6. HF vs regressors
 
-- Pedido explícito: na quantificação dos chunks de teste, usam-se **apenas os scores do classificador** (HF), como em `Classifying.analyzer` — não os scores dos regressores.
-- O ficheiro de log (`regressor/toms_regressor_log.txt`) ainda mostra, para cada janela de teste, a matriz `M` que os regressores **teriam** produzido no `t` dessa janela, e a média do classificador na janela (para comparação), mas o DyS nos testes usa só o classificador.
+- **HF**: targets `Y` for regressor training; per-document scores for the “test” side of each quantifier.
+- **Regressors** enter quantifier calibration only through the **K rows of `M(t)`** per window (not via row-mean scores per line of the original `val_set`).
 
-## 7. Ficheiros de saída
+## 7. Output files
 
-- **`regressor/toms_regressor_log.txt`** (append): cabeçalho por run (dataset, quantificador, seed), bloco de treino por classe (`n`, `t` min/max, amostra de `Y`), e secções de **validação** e **teste** com `M` e vetores médios.
-- **`output_regressor/*.csv`**: por janela, colunas `t_window`, entradas `M_r{i}_c{j}`, e `score_mean_{classe}` (média das linhas de `M` renormalizada).
+- **`output_files/regressor/toms_regressor_log.txt`** (append): header per run (dataset, quantifier, seed), per-class training block (`n`, `t` min/max, sample `Y`), validation/test sections with `M` and row-mean vectors.
+- **`output_files/regressor/*.csv`**: per window: `t_window`, `M_r{i}_c{j}`, and `score_mean_{class}` (row-mean of `M`, renormalized).
 
-## 8. Notas
+## 8. Notes
 
-- O min–max temporal de cada `TimeSeriesMultinomialRegressor` é aprendido **só** com os `t` das amostras da classe correspondente no treino; em predição, tempos fora desse intervalo continuam a ser extrapolados linearmente na normalização interna do modelo.
-- O cache em `quant_results` continua a ser **ignorado** quando há regressor TOMS (comportamento existente em `qtfied_dists`).
+- Temporal min–max inside each `TimeSeriesMultinomialRegressor` is learned **only** from training `t` for that class; at prediction, times outside that range are still linearly extrapolated in the model's internal normalization.
+- On-disk cache under `output_files/results` remains **skipped** when a TOMS regressor is active (existing behaviour in `qtfied_dists`).

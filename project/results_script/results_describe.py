@@ -27,13 +27,13 @@ TSF = ["QFY", "MA", "WAUA", "KFUA", "KFMA", "GPR"]
 # tot = np.zeros(72*6).reshape(72, 6)
 tot = np.zeros(3 * 4 * 5 * 6).reshape(3 * 4 * 5, 6)
 for seed in seeds:
-    results_path = config.OUTPUT_DIR / f"MAE results seed {seed}.csv"
+    results_path = config.QUANT_RESULTS_DIR / f"MAE results seed {seed}.csv"
     res = pd.read_csv(results_path).drop(labels=["Unnamed: 0"], axis=1)
     res = res.to_numpy()[:, 3:9]
     tot = tot + res
 tot = tot / len(seeds)
 
-tot_res = pd.read_csv(config.OUTPUT_DIR / "MAE results seed 1.csv").iloc[:, :4]
+tot_res = pd.read_csv(config.QUANT_RESULTS_DIR / "MAE results seed 1.csv").iloc[:, :4]
 for i, m in enumerate(TSF):
     tot_res[m] = tot[:, i]
 
@@ -80,4 +80,4 @@ for i in range(len(TSF_results)):
 
 tot_res["best_method"] = np.array(best_m)
 tot_res = tot_res.drop(labels=["Unnamed: 0"], axis=1)
-tot_res.to_csv(config.OUTPUT_DIR / "MAE quanti_results mean.csv")
+tot_res.to_csv(config.QUANT_RESULTS_DIR / "MAE quanti_results mean.csv")

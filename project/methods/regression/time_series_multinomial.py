@@ -30,7 +30,8 @@ class TimeSeriesMultinomialRegressor:
 
     This model maps time information (e.g., days since epoch) to a multinomial probability vector.
     Concretely, time points are first transformed into features (X) using linear, polynomial,
-    or cyclic basis expansions, and min–max normalized using statistics computed at fit time.
+    cyclic basis expansions, or raw time (identity), and min–max normalized using statistics
+    computed at fit time as needed. Features are time-only (no constant / bias column).
 
     Each class k receives a weight vector, assembled in the weight matrix C (shape: d features x K classes).
     For a given sample, the model computes logits by the linear combination `logits = X @ C`.
@@ -47,9 +48,10 @@ class TimeSeriesMultinomialRegressor:
         ----------
         mode : str, optional
             Feature construction mode:
-            - "linear"      : [1, t_norm]
-            - "polynomial"  : [1, t_norm, t_norm^2, ..., t_norm^degree]
-            - "cyclic"      : [1, sin(2πt_norm/p), cos(2πt_norm/p)]
+            - "linear"      : [t_norm]
+            - "polynomial"  : [t_norm, t_norm^2, ..., t_norm^degree]
+            - "cyclic"      : [sin(2πt_norm/p), cos(2πt_norm/p)]
+            - "identity"    : [t] (no normalization, raw time as feature)
         degree : int, optional
             Degree for the polynomial basis (only used if mode="polynomial").
         period : float or None, optional
@@ -79,6 +81,10 @@ class TimeSeriesMultinomialRegressor:
         """
         t = np.asanyarray(t).astype(np.float64).flatten()
 
+        if self.mode == "identity":
+            return t.reshape(-1, 1)
+
+        # All other modes (linear/poly/cyclic) use normalization
         if self.t_min_ is None or self.t_max_ is None:
             self.t_min_ = float(t.min())
             self.t_max_ = float(t.max())
@@ -90,24 +96,24 @@ class TimeSeriesMultinomialRegressor:
             t_norm = np.zeros_like(t)
 
         t_norm = t_norm.reshape(-1, 1)
-        ones = np.ones_like(t_norm)
 
         if self.mode == "linear":
-            # Features: [bias, normalized time]
-            return np.hstack([ones, t_norm])
+            return t_norm
 
         if self.mode == "polynomial":
-            # Features: [bias, t, t^2, ..., t^degree]
-            return np.vander(t_norm.ravel(), N=self.degree + 1, increasing=True)
+            # vander includes leading column of ones; keep only powers of t_norm
+            poly = np.vander(t_norm.ravel(), N=self.degree + 1, increasing=True)
+            if poly.shape[1] <= 1:
+                return t_norm
+            return poly[:, 1:]
 
         if self.mode == "cyclic":
-            # Features: [bias, sin(2πt/p), cos(2πt/p)]
             p = self.period if self.period is not None else 1.0
             if self.period is not None and range_t > 0:
                 p = float(self.period) / range_t
             sines = np.sin(2 * np.pi * t_norm / p)
             cosines = np.cos(2 * np.pi * t_norm / p)
-            return np.hstack([ones, sines, cosines])
+            return np.hstack([sines, cosines])
 
         # Default: just the normalized time
         return t_norm
@@ -137,7 +143,8 @@ class TimeSeriesMultinomialRegressor:
         Fit the weight matrix C by minimizing the cross-entropy between the target
         soft labels and the predicted multiclass probabilities.
 
-        The input time points t_series are first min–max normalized and expanded into features X.
+        The input time points t_series are first min–max normalized and expanded into features X,
+        except if mode=="identity", in which unix times are used as-is.
         The model learns a weight matrix (C) that linearly combines the features for each class,
         producing logits, which are then passed through the softmax function to obtain final probabilities.
 
@@ -153,8 +160,11 @@ class TimeSeriesMultinomialRegressor:
         self : object
             Fitted instance.
         """
-        self.t_min_ = None
-        self.t_max_ = None
+        # If using normalization, re-compute min/max when refitting
+        if self.mode != "identity":
+            self.t_min_ = None
+            self.t_max_ = None
+
         X = self._prepare_features(t_series)
         d, K = X.shape[1], Y_soft.shape[1]
 

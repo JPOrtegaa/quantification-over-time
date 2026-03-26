@@ -11,20 +11,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 # /home/daniel/Documents/quantification-over-time/time series qua
 DATA_DIR = PROJECT_ROOT.parent / "time series qua"
 
-# Output directories
+# Output directories (all under output_files/)
 OUTPUT_DIR = PROJECT_ROOT / "output_files"
-OUTPUT_REGRESSOR_DIR = PROJECT_ROOT / "output_regressor"
-OUTPUT_CLASSIFICATION_DIR = PROJECT_ROOT / "output_classification"
-QUANT_RESULTS_DIR = PROJECT_ROOT / "quant_results"
-PLOTS_DIR = PROJECT_ROOT / "plots"
-README_IMPLEMENT_DIR = PROJECT_ROOT / "ReadMe_Implement"
+OUTPUT_REGRESSOR_DIR = OUTPUT_DIR / "regressor"
+OUTPUT_CLASSIFICATION_DIR = OUTPUT_DIR / "classification"
+QUANT_RESULTS_DIR = OUTPUT_DIR / "results"
+PLOTS_DIR = OUTPUT_DIR / "plots"
+# R / ReadMe2 pipeline artefacts (val/test preds for quantifier "ReadMe2", etc.)
+README_IMPLEMENT_DIR = PROJECT_ROOT / "methods" / "ReadMe_Implement"
 
 # CPU/RAM (conservative defaults for low-memory machines).
 # quantifications joblib Parallel loky: 1 = sequential; 2+ = parallel;
 # -1 = all cores (only if you have RAM; each worker may duplicate the HF model).
 TEST_CHUNK_LOKY_JOBS = int(os.environ.get("QUA_TEST_CHUNK_JOBS", "1"))
 
-# HuggingFace sentiment model: texts per forward pass (smaller → lower RAM spikes).
+# HuggingFace sentiment model: texts per forward pass (smaller -> lower RAM spikes).
 HF_INFERENCE_BATCH_SIZE = int(os.environ.get("QUA_HF_BATCH_SIZE", "1000"))
 
 # LinearRegression, LogisticRegression, RandomForest, etc.

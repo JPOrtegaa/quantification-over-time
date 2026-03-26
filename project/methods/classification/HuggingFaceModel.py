@@ -66,7 +66,7 @@ class SentiAnalyzer:
         num_batches = (n + batch_size - 1) // batch_size if n else 0
         ctx = (hf_context or "HF sentiment").strip().replace("\n", " ")
         if len(ctx) > 110:
-            ctx = ctx[:107] + "…"
+            ctx = ctx[:107] + "..."
         if announce and n > 0:
             print(
                 f"[HF] {ctx} | texts={n} batches={num_batches}",

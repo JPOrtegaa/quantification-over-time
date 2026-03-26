@@ -1,6 +1,6 @@
 """
-TOMS: K regressores TimeSeriesMultinomial (um por classe), treinados só em linhas
-cuja etiqueta verdadeira é essa classe; tempo por janela é escalar (um t por chunk).
+TOMS: K TimeSeriesMultinomial regressors (one per class), each trained only on rows whose
+true label is that class; time per window is a scalar (one t per chunk).
 """
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from typing import Any, Dict, List, Optional, TextIO, Tuple
 import numpy as np
 import pandas as pd
 
-from classification import Classifying
-from regression import trainingModel as regression_trainingModel
+from methods.classification import Classifying
+from methods.regression import trainingModel as regression_trainingModel
 
 
 def _time_column_to_days(time_series) -> np.ndarray:
-    """Mesma convenção que quantifications._time_column_to_X (dias UNIX)."""
+    """Same convention as quantifications._time_column_to_X (UNIX days)."""
     s = time_series if isinstance(time_series, pd.Series) else pd.Series(time_series)
     t = pd.to_datetime(s, errors="coerce", dayfirst=True)
     if t.isna().any():
@@ -31,7 +31,7 @@ def _time_column_to_days(time_series) -> np.ndarray:
 
 @dataclass
 class TOMSMultiRegressorBundle:
-    """K regressores + mapa window_index -> t escalar (dias) + ordem das classes."""
+    """K regressors + map window_index -> scalar t (days) + class order."""
 
     regressors: List[Any]
     window_t: Dict[int, float]
@@ -39,7 +39,7 @@ class TOMSMultiRegressorBundle:
 
 
 def scalar_time_per_window(ts_chunks, time_column: str) -> Dict[int, float]:
-    """Um único t por janela: mediana dos tempos (em dias) de todas as linhas do chunk."""
+    """One scalar t per window: median of times (in days) over all rows in the chunk."""
     out = {}
     for wi in sorted(ts_chunks.keys()):
         df = ts_chunks[wi]
@@ -54,7 +54,7 @@ def scalar_time_per_window(ts_chunks, time_column: str) -> Dict[int, float]:
 
 
 def attach_window_ids(val_set: pd.DataFrame, ts_chunks, val_length: int) -> pd.DataFrame:
-    """Alinha linhas do val_set (concat de chunks 0..val_length-1) a índices de janela."""
+    """Map rows of val_set (concat of chunks 0..val_length-1) to window indices."""
     parts = [np.full(len(ts_chunks[w]), w, dtype=int) for w in range(val_length)]
     ids = np.concatenate(parts)
     if len(ids) != len(val_set):
@@ -66,8 +66,8 @@ def attach_window_ids(val_set: pd.DataFrame, ts_chunks, val_length: int) -> pd.D
     return vs
 
 
-def _score_matrix_at_t(bundle: TOMSMultiRegressorBundle, t_scalar: float) -> np.ndarray:
-    """Matriz (K, K): linha k = saída normalizada do regressor k (vetor sobre classes)."""
+def score_matrix_at_t(bundle: TOMSMultiRegressorBundle, t_scalar: float) -> np.ndarray:
+    """Matrix (K, K): row k is normalized output of regressor k (K-dim vector over classes)."""
     K = len(bundle.regressors)
     M = np.zeros((K, K), dtype=np.float64)
     t_arr = np.array([float(t_scalar)], dtype=np.float64)
@@ -75,7 +75,7 @@ def _score_matrix_at_t(bundle: TOMSMultiRegressorBundle, t_scalar: float) -> np.
         row = reg.predict(t_arr.reshape(-1, 1))
         row = np.asarray(row, dtype=np.float64).reshape(-1)
         if row.shape[0] != K:
-            raise ValueError(f"Regressor {k} esperava {K} classes, obteve {row.shape}")
+            raise ValueError(f"Regressor {k} expected {K} classes, got {row.shape}")
         row = np.clip(row, 1e-8, None)
         rs = row.sum()
         M[k] = row / rs if rs > 0 else 1.0 / K
@@ -83,7 +83,7 @@ def _score_matrix_at_t(bundle: TOMSMultiRegressorBundle, t_scalar: float) -> np.
 
 
 def mean_simplex_from_matrix(M: np.ndarray) -> np.ndarray:
-    """Média das K linhas de M, renormalizada no simplex (scores finais p/ quantificador)."""
+    """Mean of the K rows of M, renormalized on the simplex (legacy summary scores)."""
     v = M.mean(axis=0)
     v = np.clip(v, 1e-8, None)
     s = v.sum()
@@ -97,12 +97,12 @@ def write_bundle_window_scores_csv(
     val_length: int,
     out_path: Path,
 ) -> None:
-    """CSV: uma linha por janela com t escalar, entradas M (KxK) e vetor média renormalizado."""
+    """CSV: one row per window with scalar t, M (KxK) entries, and row-mean renormalized vector."""
     rows = []
     K = len(classes)
     for wi in sorted(ts_chunks.keys()):
         t_w = bundle.window_t[wi]
-        M = _score_matrix_at_t(bundle, t_w)
+        M = score_matrix_at_t(bundle, t_w)
         v = mean_simplex_from_matrix(M)
         split = "val" if wi < val_length else "test"
         row = {
@@ -192,8 +192,8 @@ def scores_dataframe_from_bundle(
     df_text: pd.DataFrame, classes: List, bundle: TOMSMultiRegressorBundle
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
-    Para cada linha: obtém M no t da janela; vetor de scores = média das linhas de M (simplex).
-    Retorna (DataFrame de scores + true_y), e a lista de matrizes M por linha (para log opcional).
+    For each row: M at the row's window time; score vector = row-mean of M (simplex).
+    Returns (score DataFrame + true_y), and stacked M matrices per row (optional logging).
     """
     if "_window_id" not in df_text.columns:
         raise ValueError(
@@ -205,7 +205,7 @@ def scores_dataframe_from_bundle(
     for i in range(len(df_text)):
         w = int(wids[i])
         t_w = bundle.window_t[w]
-        M = _score_matrix_at_t(bundle, t_w)
+        M = score_matrix_at_t(bundle, t_w)
         matrices.append(M)
         v = mean_simplex_from_matrix(M)
         rows_scores.append(v)
@@ -217,7 +217,7 @@ def scores_dataframe_from_bundle(
 
 
 def analyzer_toms_multi_val(df_text, mod, classes, bundle: TOMSMultiRegressorBundle):
-    """Validação TOMS: scores só dos K regressores (sem HF); rótulos preditos por argmax."""
+    """TOMS validation scores from K regressors only (no HF); predicted labels via argmax."""
     new_scores, _ = scores_dataframe_from_bundle(df_text, classes, bundle)
     ty = new_scores["true_y"].to_numpy()
     adjusted = new_scores[[cl for cl in classes]].to_numpy()
@@ -246,7 +246,7 @@ def log_validation_and_test_matrices(
     val_length: int,
     log_file: Path,
 ) -> None:
-    """Regista matrizes M por janela (val e test) e médias; no teste também média HF por janela."""
+    """Append per-window M matrices (val and test) and row-means; on test, also HF window mean."""
     log_file.parent.mkdir(parents=True, exist_ok=True)
     K = len(classes)
 
@@ -254,17 +254,18 @@ def log_validation_and_test_matrices(
         fp.write("--- VALIDATION: M matrix (KxK) per window (scalar t) ---\n")
         for w in range(val_length):
             t_w = bundle.window_t[w]
-            M = _score_matrix_at_t(bundle, t_w)
+            M = score_matrix_at_t(bundle, t_w)
             v = mean_simplex_from_matrix(M)
             fp.write(f"  window={w} split=val t={t_w:.8g}\n")
             fp.write(f"    M ({K}x{K}):\n{np.array2string(M, precision=6)}\n")
             fp.write(
-                f"    mean_rows_renorm (scores fed to val quantifier): "
+                f"    mean_rows_renorm (diagnostic only; val MAE uses M rows per val window): "
                 f"{np.array2string(v, precision=6)}\n"
             )
 
         fp.write(
-            "--- TEST: regressor M (log only); quantifier uses classifier scores ---\n"
+            "--- TEST: M from regressors used as quantifier calibration (K rows); "
+            "document scores from classifier ---\n"
         )
         for j in sorted(test_set_dict.keys()):
             df = test_set_dict[j]
@@ -274,7 +275,7 @@ def log_validation_and_test_matrices(
                 t_w = float(np.median(raw_t))
             else:
                 t_w = bundle.window_t[wi]
-            M = _score_matrix_at_t(bundle, t_w)
+            M = score_matrix_at_t(bundle, t_w)
             v_reg = mean_simplex_from_matrix(M)
             _, pred_hf, _ = Classifying.analyzer(
                 df, classifier, classes, hf_context=f"log w{wi}"
@@ -286,6 +287,6 @@ def log_validation_and_test_matrices(
             fp.write(f"    M regressor ({K}x{K}):\n{np.array2string(M, precision=6)}\n")
             fp.write(f"    mean_rows_renorm (log only): {np.array2string(v_reg, precision=6)}\n")
             fp.write(
-                f"    classifier mean in window (used by DyS on test): "
+                f"    classifier mean in window (quantifier test scores): "
                 f"{np.array2string(hf_mean, precision=6)}\n"
             )

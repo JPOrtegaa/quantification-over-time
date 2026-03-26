@@ -7,8 +7,8 @@ import urllib.request
 from utils import val_test_split
 import config
 
-# DyS-Opt espera um stride em [0, 1] (largura da busca em alpha). O 4º valor do loader
-# deve ser esse ratio, não o tamanho mediano dos chunks.
+# DyS-Opt expects a stride in [0, 1] (width of the alpha search). The 4th value returned
+# by the loader must be this ratio, not the median chunk size.
 DEFAULT_STRIDE_RATIO = 0.05
 
 

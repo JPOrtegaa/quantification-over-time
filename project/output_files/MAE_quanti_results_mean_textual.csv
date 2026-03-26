@@ -1,5 +1,0 @@
-,Dataset,QuaMethod,Classifier,QFY,MA,KFMA,best_method
-0,Apple-Twitter-Sentiment-DFE,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.09538515501553275,0.0946116550280114,0.09272363611751051,KFMA
-1,Apple-Twitter-Sentiment-DFE,DyS-Opt,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.09540864675960581,0.09471379781992621,0.09288114048431767,KFMA
-2,nepali_dataset_eng,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.11783655547740518,0.11695689033405123,0.11683892604933958,KFMA
-3,nepali_dataset_eng,DyS-Opt,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.11783538540538079,0.11695647307512787,0.11683861358519874,KFMA

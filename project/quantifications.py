@@ -1,15 +1,15 @@
 import numpy as np
 from pathlib import Path
-from quantifiers import DyS, DyS_Opt, ACC, GPAC, EDy
+from methods.quantifiers import DyS, DyS_Opt, ACC, GPAC, EDy
 from sklearn.metrics import confusion_matrix
-from classification import Classifying
+from methods.classification import Classifying
 import pandas as pd
 from joblib import Parallel, delayed
-from utils import mse, mae
+from utils import mae, mse
 import config
-from regression.toms_multi_regressor import (
+from methods.regression.toms_multi_regressor import (
     TOMSMultiRegressorBundle,
-    make_analyze_fn_toms_multi,
+    score_matrix_at_t,
 )
 
 
@@ -18,6 +18,33 @@ def _effective_loky_jobs(n_tasks):
     if j == 1 or n_tasks <= 1:
         return 1
     return j
+
+
+def val_labels_scores_from_toms_matrix(M: np.ndarray, classes) -> tuple:
+    """
+    Calibration set from a single TOMS matrix M(t): K rows, row k = regressor k outputs;
+    synthetic label for row k is classes[k]. Used as quantifier training data per test window.
+    """
+    K = len(classes)
+    M = np.asarray(M, dtype=np.float64)
+    if M.shape != (K, K):
+        raise ValueError(f"TOMS matrix must be ({K}, {K}), got {M.shape}")
+    new_scores = pd.DataFrame({cl: M[:, j] for j, cl in enumerate(classes)})
+    true_y_arr = np.asarray(classes)
+    new_scores["true_y"] = true_y_arr
+    class_cols = np.asarray(classes)
+    pred = class_cols[np.argmax(M, axis=1)]
+    new_labels = pd.DataFrame({"pred_y": pred, "true_y": true_y_arr})
+    return new_labels, new_scores
+
+
+def _matrices_by_chunk(bundle: TOMSMultiRegressorBundle, n_chunks: int, base_wi: int):
+    """Chunk key j -> M(t) at global window index base_wi + j (val MAE: base_wi=0; test: base_wi=val_length)."""
+    out = {}
+    for j in range(n_chunks):
+        wi = base_wi + j
+        out[j] = score_matrix_at_t(bundle, bundle.window_t[wi])
+    return out
 
 
 def _analyze_test_chunks_parallel(test_set_dict, analyze_test, senti_model, classes, kind):
@@ -106,9 +133,9 @@ def date_span_label(df: pd.DataFrame, time_column: str) -> str:
         t = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
     if t.notna().any():
         try:
-            return f"{t.min().date()}→{t.max().date()}"
+            return f"{t.min().date()} to {t.max().date()}"
         except (ValueError, AttributeError):
-            return f"{t.min()}→{t.max()}"
+            return f"{t.min()} to {t.max()}"
     return ""
 
 
@@ -310,6 +337,43 @@ def ACC_on_TSsets(
     return qtfied_distribution
 
 
+def ACC_on_TSsets_toms(
+    test_set_dict, senti_model, classes, bundle: TOMSMultiRegressorBundle, base_wi: int
+):
+    tests_y_ = _analyze_test_chunks_parallel(
+        test_set_dict, Classifying.analyzer, senti_model, classes, "labels"
+    )
+    n_chunks = len(test_set_dict)
+    M_by_j = _matrices_by_chunk(bundle, n_chunks, base_wi)
+    qtfied_distribution = []
+    for i, cla in enumerate(classes):
+        qtfied_prevs_one = []
+        for j in range(n_chunks):
+            val_y_, _ = val_labels_scores_from_toms_matrix(M_by_j[j], classes)
+            val_y_one = val_y_.copy()
+            val_y_one.loc[val_y_one["true_y"] == cla, "true_y"] = "True"
+            val_y_one.loc[val_y_one["true_y"].isin(classes), "true_y"] = "False"
+            val_y_one.loc[val_y_one["pred_y"] == cla, "pred_y"] = "True"
+            val_y_one.loc[val_y_one["pred_y"].isin(classes), "pred_y"] = "False"
+            tn, fp, fn, tp = confusion_matrix(
+                val_y_one["true_y"], val_y_one["pred_y"]
+            ).ravel()
+            tpr = tp / (tp + fn)
+            fpr = fp / (fp + tn)
+            test_y_one = tests_y_[j]["pred_y"].copy()
+            test_y_one[test_y_one == cla] = "True"
+            test_y_one[test_y_one.isin(classes)] = "False"
+            qua_prev = ACC(test_y_one, tpr, fpr)
+            qtfied_prevs_one.append(qua_prev)
+        qtfied_distribution.append(qtfied_prevs_one)
+    qtfied_distribution = np.array(qtfied_distribution).T
+    qtfied_distribution[np.all(qtfied_distribution == 0, axis=1)] = 1
+    qtfied_distribution = qtfied_distribution / (
+        np.sum(qtfied_distribution, axis=1).reshape(-1, 1)
+    )
+    return qtfied_distribution
+
+
 def DyS_on_TSsets(
     val_set, test_set_dict, senti_model, classes, analyze_fn=None, analyze_fn_test=None
 ):
@@ -345,6 +409,46 @@ def DyS_on_TSsets(
     return qtfied_distribution
 
 
+def DyS_on_TSsets_toms(
+    test_set_dict,
+    senti_model,
+    classes,
+    bundle: TOMSMultiRegressorBundle,
+    base_wi: int,
+):
+    """Per chunk j: calibrate DyS on K rows of M(t); test scores from HF. base_wi=0 (val chunks) or val_length (test)."""
+    tests_scores = _analyze_test_chunks_parallel(
+        test_set_dict, Classifying.analyzer, senti_model, classes, "scores"
+    )
+    n_test = len(test_set_dict)
+    M_by_j = _matrices_by_chunk(bundle, n_test, base_wi)
+    val_score_by_j = {
+        j: val_labels_scores_from_toms_matrix(M_by_j[j], classes)[1]
+        for j in range(n_test)
+    }
+
+    qtfied_distribution = []
+    for i, cla in enumerate(classes):
+        qtfied_prevs_one = []
+        for j in range(n_test):
+            val_score = val_score_by_j[j]
+            val_score_one = val_score[val_score["true_y"] == cla][cla]
+            val_score_rest = val_score[val_score["true_y"] != cla][cla]
+            test_score_one = tests_scores[j][cla]
+            qua_prev = DyS(
+                val_score_one, val_score_rest, test_score_one, measure="topsoe"
+            )
+            qtfied_prevs_one.append(qua_prev)
+        qtfied_distribution.append(qtfied_prevs_one)
+
+    qtfied_distribution = np.array(qtfied_distribution).T
+    qtfied_distribution[np.all(qtfied_distribution == 0, axis=1)] = 1
+    qtfied_distribution = qtfied_distribution / (
+        np.sum(qtfied_distribution, axis=1).reshape(-1, 1)
+    )
+    return qtfied_distribution
+
+
 def DyS_Opt_on_TSsets(
     val_set,
     test_set_dict,
@@ -377,7 +481,7 @@ def DyS_Opt_on_TSsets(
             else:
                 current_left = max(0.0, alpha_prev - stride_ratio)
                 current_right = min(1.0, alpha_prev + stride_ratio)
-                
+
             test_score_one = tests_scores[j][cla]
             qua_prev = DyS_Opt(
                 val_score_one, val_score_rest, test_score_one, measure="topsoe", left=current_left, right=current_right
@@ -392,6 +496,54 @@ def DyS_Opt_on_TSsets(
         np.sum(qtfied_distribution, axis=1).reshape(-1, 1)
     )
 
+    return qtfied_distribution
+
+
+def DyS_Opt_on_TSsets_toms(
+    test_set_dict,
+    senti_model,
+    classes,
+    bundle: TOMSMultiRegressorBundle,
+    base_wi: int,
+    stride_ratio=0.05,
+):
+    """DyS-Opt with per-chunk M calibration; each chunk uses a fresh α search on [0,1]."""
+    # stride_ratio ignored (non-temporal calibration per chunk); kept for call-site compatibility
+    _ = stride_ratio
+    tests_scores = _analyze_test_chunks_parallel(
+        test_set_dict, Classifying.analyzer, senti_model, classes, "scores"
+    )
+    n_test = len(test_set_dict)
+    M_by_j = _matrices_by_chunk(bundle, n_test, base_wi)
+    val_score_by_j = {
+        j: val_labels_scores_from_toms_matrix(M_by_j[j], classes)[1]
+        for j in range(n_test)
+    }
+
+    qtfied_distribution = []
+    for i, cla in enumerate(classes):
+        qtfied_prevs_one = []
+        for j in range(n_test):
+            val_score = val_score_by_j[j]
+            val_score_one = val_score[val_score["true_y"] == cla][cla]
+            val_score_rest = val_score[val_score["true_y"] != cla][cla]
+            test_score_one = tests_scores[j][cla]
+            qua_prev = DyS_Opt(
+                val_score_one,
+                val_score_rest,
+                test_score_one,
+                measure="topsoe",
+                left=0.0,
+                right=1.0,
+            )
+            qtfied_prevs_one.append(qua_prev)
+        qtfied_distribution.append(qtfied_prevs_one)
+
+    qtfied_distribution = np.array(qtfied_distribution).T
+    qtfied_distribution[np.all(qtfied_distribution == 0, axis=1)] = 1
+    qtfied_distribution = qtfied_distribution / (
+        np.sum(qtfied_distribution, axis=1).reshape(-1, 1)
+    )
     return qtfied_distribution
 
 
@@ -431,6 +583,34 @@ def GPAC_on_TSsets(
     return qtfied_distribution
 
 
+def GPAC_on_TSsets_toms(
+    test_set_dict, senti_model, classes, bundle: TOMSMultiRegressorBundle, base_wi: int
+):
+    val_y_np = np.asarray(classes)
+    tests_scores = _analyze_test_chunks_parallel(
+        test_set_dict, Classifying.analyzer, senti_model, classes, "scores_arr"
+    )
+    n_test = len(test_set_dict)
+    M_by_j = _matrices_by_chunk(bundle, n_test, base_wi)
+    nj = _effective_loky_jobs(n_test)
+    if nj == 1:
+        qtfied_distribution = [
+            GPAC(M_by_j[j], tests_scores[j], val_y_np, classes) for j in range(n_test)
+        ]
+    else:
+
+        def gpac_j(j):
+            return j, GPAC(M_by_j[j], tests_scores[j], val_y_np, classes)
+
+        pairs = Parallel(n_jobs=nj, backend="loky")(
+            delayed(gpac_j)(j) for j in range(n_test)
+        )
+        pairs.sort(key=lambda x: x[0])
+        qtfied_distribution = [p[1] for p in pairs]
+
+    return np.array(qtfied_distribution)
+
+
 def EDy_on_TSsets(
     val_set, test_set_dict, senti_model, classes, analyze_fn=None, analyze_fn_test=None
 ):
@@ -465,6 +645,34 @@ def EDy_on_TSsets(
     qtfied_distribution = np.array(qtfied_distribution)
 
     return qtfied_distribution
+
+
+def EDy_on_TSsets_toms(
+    test_set_dict, senti_model, classes, bundle: TOMSMultiRegressorBundle, base_wi: int
+):
+    val_y_np = np.asarray(classes)
+    tests_scores = _analyze_test_chunks_parallel(
+        test_set_dict, Classifying.analyzer, senti_model, classes, "scores_arr"
+    )
+    n_test = len(test_set_dict)
+    M_by_j = _matrices_by_chunk(bundle, n_test, base_wi)
+    nj = _effective_loky_jobs(n_test)
+    if nj == 1:
+        qtfied_distribution = [
+            EDy(M_by_j[j], val_y_np, tests_scores[j], classes) for j in range(n_test)
+        ]
+    else:
+
+        def edy_j(j):
+            return j, EDy(M_by_j[j], val_y_np, tests_scores[j], classes)
+
+        pairs = Parallel(n_jobs=nj, backend="loky")(
+            delayed(edy_j)(j) for j in range(n_test)
+        )
+        pairs.sort(key=lambda x: x[0])
+        qtfied_distribution = [p[1] for p in pairs]
+
+    return np.array(qtfied_distribution)
 
 
 def CC_on_TSsets(
@@ -506,19 +714,13 @@ def getMAE_val_set(
     if regressor is not None:
         if time_column is None:
             raise ValueError("time_column is required when regressor is provided")
-        if isinstance(regressor, TOMSMultiRegressorBundle):
-            analyze_fn = make_analyze_fn_toms_multi(regressor)
-        else:
+        if not isinstance(regressor, TOMSMultiRegressorBundle):
             analyze_fn = make_analyze_fn(regressor, time_column)
 
     subsamples_dict = {}
     subsamples_dsts = []
     for i in range(name[1]):
         dfc = data[i].copy()
-        if regressor is not None and isinstance(
-            regressor, TOMSMultiRegressorBundle
-        ):
-            dfc["_window_id"] = i
         subsamples_dict[i] = dfc
         s = subsamples_dict[i].value_counts("label").sum()
         p = []
@@ -536,17 +738,52 @@ def getMAE_val_set(
     val_MAE, val_MSE, sep_MAE, qtfd_dsts = None, None, None, None
 
     if qua == "DyS":
-        qtfd_dsts = DyS_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            qtfd_dsts = DyS_on_TSsets_toms(subsamples_dict, mod, c, regressor, 0)
+        else:
+            qtfd_dsts = DyS_on_TSsets(
+                val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn
+            )
     elif qua == "DyS-Opt":
-        qtfd_dsts = DyS_Opt_on_TSsets(
-            val_set, subsamples_dict, mod, c, stride_ratio=stride_ratio, analyze_fn=analyze_fn
-        )
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            qtfd_dsts = DyS_Opt_on_TSsets_toms(
+                subsamples_dict,
+                mod,
+                c,
+                regressor,
+                0,
+                stride_ratio=stride_ratio,
+            )
+        else:
+            qtfd_dsts = DyS_Opt_on_TSsets(
+                val_set,
+                subsamples_dict,
+                mod,
+                c,
+                stride_ratio=stride_ratio,
+                analyze_fn=analyze_fn,
+            )
     elif qua == "ACC":
-        qtfd_dsts = ACC_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            qtfd_dsts = ACC_on_TSsets_toms(subsamples_dict, mod, c, regressor, 0)
+        else:
+            qtfd_dsts = ACC_on_TSsets(
+                val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn
+            )
     elif qua == "GPAC":
-        qtfd_dsts = GPAC_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            qtfd_dsts = GPAC_on_TSsets_toms(subsamples_dict, mod, c, regressor, 0)
+        else:
+            qtfd_dsts = GPAC_on_TSsets(
+                val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn
+            )
     elif qua == "EDy":
-        qtfd_dsts = EDy_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            qtfd_dsts = EDy_on_TSsets_toms(subsamples_dict, mod, c, regressor, 0)
+        else:
+            qtfd_dsts = EDy_on_TSsets(
+                val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn
+            )
     elif qua == "CC":
         qtfd_dsts = CC_on_TSsets(subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "ReadMe2":
@@ -577,15 +814,14 @@ def qtfied_dists(
     regressor=None,
     time_column=None,
 ):
+    val_len = int(dataname[1])
     analyze_fn = None
     analyze_fn_test = None
     if regressor is not None:
         if time_column is None:
             raise ValueError("time_column is required when regressor is provided")
         if isinstance(regressor, TOMSMultiRegressorBundle):
-            analyze_fn = make_analyze_fn_toms_multi(regressor)
             analyze_fn_test = Classifying.analyzer
-            val_len = int(dataname[1])
             data_dict = {k: v.copy() for k, v in data_dict.items()}
             for j in list(data_dict.keys()):
                 df = data_dict[j]
@@ -619,51 +855,79 @@ def qtfied_dists(
 
     except IOError:
         quantified_dsts = 0
+        is_toms_bundle = isinstance(regressor, TOMSMultiRegressorBundle)
         if qua == "DyS":
-            quantified_dsts = DyS_on_TSsets(
-                valset,
-                data_dict,
-                mod,
-                c,
-                analyze_fn=analyze_fn,
-                analyze_fn_test=analyze_fn_test,
+            quantified_dsts = (
+                DyS_on_TSsets_toms(data_dict, mod, c, regressor, val_len)
+                if is_toms_bundle
+                else DyS_on_TSsets(
+                    valset,
+                    data_dict,
+                    mod,
+                    c,
+                    analyze_fn=analyze_fn,
+                    analyze_fn_test=analyze_fn_test,
+                )
             )
         elif qua == "DyS-Opt":
-            quantified_dsts = DyS_Opt_on_TSsets(
-                valset,
-                data_dict,
-                mod,
-                c,
-                stride_ratio=stride_ratio,
-                analyze_fn=analyze_fn,
-                analyze_fn_test=analyze_fn_test,
+            quantified_dsts = (
+                DyS_Opt_on_TSsets_toms(
+                    data_dict,
+                    mod,
+                    c,
+                    regressor,
+                    val_len,
+                    stride_ratio=stride_ratio,
+                )
+                if is_toms_bundle
+                else DyS_Opt_on_TSsets(
+                    valset,
+                    data_dict,
+                    mod,
+                    c,
+                    stride_ratio=stride_ratio,
+                    analyze_fn=analyze_fn,
+                    analyze_fn_test=analyze_fn_test,
+                )
             )
         elif qua == "ACC":
-            quantified_dsts = ACC_on_TSsets(
-                valset,
-                data_dict,
-                mod,
-                c,
-                analyze_fn=analyze_fn,
-                analyze_fn_test=analyze_fn_test,
+            quantified_dsts = (
+                ACC_on_TSsets_toms(data_dict, mod, c, regressor, val_len)
+                if is_toms_bundle
+                else ACC_on_TSsets(
+                    valset,
+                    data_dict,
+                    mod,
+                    c,
+                    analyze_fn=analyze_fn,
+                    analyze_fn_test=analyze_fn_test,
+                )
             )
         elif qua == "GPAC":
-            quantified_dsts = GPAC_on_TSsets(
-                valset,
-                data_dict,
-                mod,
-                c,
-                analyze_fn=analyze_fn,
-                analyze_fn_test=analyze_fn_test,
+            quantified_dsts = (
+                GPAC_on_TSsets_toms(data_dict, mod, c, regressor, val_len)
+                if is_toms_bundle
+                else GPAC_on_TSsets(
+                    valset,
+                    data_dict,
+                    mod,
+                    c,
+                    analyze_fn=analyze_fn,
+                    analyze_fn_test=analyze_fn_test,
+                )
             )
         elif qua == "EDy":
-            quantified_dsts = EDy_on_TSsets(
-                valset,
-                data_dict,
-                mod,
-                c,
-                analyze_fn=analyze_fn,
-                analyze_fn_test=analyze_fn_test,
+            quantified_dsts = (
+                EDy_on_TSsets_toms(data_dict, mod, c, regressor, val_len)
+                if is_toms_bundle
+                else EDy_on_TSsets(
+                    valset,
+                    data_dict,
+                    mod,
+                    c,
+                    analyze_fn=analyze_fn,
+                    analyze_fn_test=analyze_fn_test,
+                )
             )
         elif qua == "CC":
             quantified_dsts = CC_on_TSsets(
