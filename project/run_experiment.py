@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 import config
 from classification import Classifying
+from classification import trainingModel
 import data_loading_old as data_loading
 import numpy as np
 import pandas as pd
@@ -24,18 +25,35 @@ from utils import params_KFMA
 
 warnings.filterwarnings("ignore")
 
-seeds = [1, 2, 3]
+seeds = [1]
 # First VAL_LENGTH time windows: validation (regressor training + quantification reference).
 VAL_LENGTH = 15
 # After the split, at most this many additional chunks are kept as temporal test (truncates tail).
 MAX_TEST_CHUNKS = 5000
+
+SENTIMENT_TIMESTAMP_COLS = {
+    "global_covid19_tweets": "TweetAt",
+    "nepali_dataset_eng": "Datetime",
+    "Apple-Twitter-Sentiment-DFE": "date",
+}
+
 DATASET = ("global_covid19_tweets", VAL_LENGTH)
+# DATASET = ("nepali_dataset_eng", VAL_LENGTH)
+# DATASET = ("Apple-Twitter-Sentiment-DFE", VAL_LENGTH)
+
+TABULAR_DATASETS = [
+    ("bike", 55),
+    ("energy", 20),
+    ("news", 36),
+]
+TABULAR_CLASSIFIERS = ["LR", "RF"]
+
 CLASSIFIERS = ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"]
-qua_methods = ["DyS", "DyS-Opt"]
-TSA_methods = ["QFY", "MA", "KFMA"]
-#EXP_TYPES = ("original", "TOMS")
-EXP_TYPES = ["TOMS"]
-REGRESSOR_TIME_COLUMN = "TweetAt"
+qua_methods = ["DyS"]
+TSA_methods = ["QFY"]
+EXP_TYPES = ["original"]
+# EXP_TYPES = ["TOMS"]
+REGRESSOR_TIME_COLUMN = SENTIMENT_TIMESTAMP_COLS.get(DATASET[0], "TweetAt")
 REGRESSOR_NAME = "TSMN"
 REGRESSOR_TSMN_KWARGS = {"tsmn_mode": "polynomial", "tsmn_degree": 3}
 unified_window = 4
@@ -227,15 +245,15 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
     )
 
     ts_chunks, ts_prevalence, c, ts_info = load_textual_series(dataset[0])
-    if dataset[0] == "global_covid19_tweets":
-        ts_chunks, ts_prevalence = truncate_time_series_chunks(
-            ts_chunks, ts_prevalence, dataset[1], MAX_TEST_CHUNKS
-        )
+    ts_chunks, ts_prevalence = truncate_time_series_chunks(
+        ts_chunks, ts_prevalence, dataset[1], MAX_TEST_CHUNKS
+    )
 
     # --- Per-chunk confusion matrices (before val/test split) ---
-    if dataset[0] == "global_covid19_tweets":
+    ts_col = SENTIMENT_TIMESTAMP_COLS.get(dataset[0])
+    if ts_col is not None:
         cm_df = qfy.compute_chunk_confusion_matrices(
-            ts_chunks, classifier, c, timestamp_col="TweetAt"
+            ts_chunks, classifier, c, timestamp_col=ts_col
         )
         cm_path = config.OUTPUT_DIR / f"confusion_matrices_{dataset[0]}.csv"
         cm_df.to_csv(cm_path, index=False)
@@ -400,6 +418,32 @@ def annotate_best_method(df, method_names):
     return best_m
 
 
+def run_tabular_confusion_matrices():
+    """Train LR and RF on each tabular dataset and save per-chunk confusion matrices."""
+    for dataset in TABULAR_DATASETS:
+        dataset_name = dataset[0]
+        _log(f"Loading tabular dataset: {dataset_name!r} …")
+        training_set, ts_chunks, ts_prevalence, c, ts_info = data_loading.loading(
+            dataset_name
+        )
+        train_x = training_set.loc[:, ~training_set.columns.isin(["label"])]
+        train_y = training_set["label"]
+
+        for clf_name in TABULAR_CLASSIFIERS:
+            _log(f"Training {clf_name} on {dataset_name!r} …")
+            fitted_clf = trainingModel.trainer(train_x, train_y, clf_name, seed=1)
+
+            _log(f"Computing per-chunk confusion matrices ({clf_name}) …")
+            cm_df = qfy.compute_chunk_confusion_matrices(
+                ts_chunks, fitted_clf, c, timestamp_col=None
+            )
+            cm_path = config.OUTPUT_DIR / f"confusion_matrices_{dataset_name}_{clf_name}.csv"
+            cm_df.to_csv(cm_path, index=False)
+            _log(f"Saved {cm_path}")
+
+    _log("Tabular confusion matrix extraction finished.")
+
+
 def run_textual_experiments(quick: bool = False):
     run_seeds = [1] if quick else seeds
     run_qua = ["DyS"] if quick else qua_methods
@@ -496,9 +540,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--run",
-        choices=["global_textual"],
+        choices=["global_textual", "tabular_cm"],
         default="global_textual",
-        help="Run global Covid19 textual quantification experiment",
+        help=(
+            "global_textual: sentiment quantification experiment; "
+            "tabular_cm: extract confusion matrices for bike/energy/news with LR and RF"
+        ),
     )
     parser.add_argument(
         "--quick",
@@ -510,5 +557,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     _log(f"__main__: args.run={args.run!r}, quick={args.quick}")
-    run_textual_experiments(quick=args.quick)
+    if args.run == "tabular_cm":
+        run_tabular_confusion_matrices()
+    else:
+        run_textual_experiments(quick=args.quick)
     _log("Main run finished.")

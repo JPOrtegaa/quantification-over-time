@@ -15,6 +15,8 @@ DATA_DIR = PROJECT_ROOT.parent / "time series qua"
 OUTPUT_DIR = PROJECT_ROOT / "output_files"
 QUANT_RESULTS_DIR = PROJECT_ROOT / "quant_results"
 PLOTS_DIR = PROJECT_ROOT / "plots"
+OUTPUT_CLASSIFICATION_DIR = OUTPUT_DIR / "classification"
+OUTPUT_REGRESSOR_DIR = OUTPUT_DIR / "regressor"
 README_IMPLEMENT_DIR = PROJECT_ROOT / "ReadMe_Implement"
 
 # Uso de CPU/RAM (defeitos conservadores para PCs com pouca memória).
@@ -31,7 +33,7 @@ SKLEARN_N_JOBS = int(os.environ.get("QUA_SKLEARN_N_JOBS", "1"))
 
 # Ensure directories exist
 def ensure_dirs():
-    for d in [OUTPUT_DIR, QUANT_RESULTS_DIR, PLOTS_DIR]:
+    for d in [OUTPUT_DIR, QUANT_RESULTS_DIR, PLOTS_DIR, OUTPUT_CLASSIFICATION_DIR, OUTPUT_REGRESSOR_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
 

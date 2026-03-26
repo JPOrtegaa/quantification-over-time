@@ -719,8 +719,7 @@ def compute_chunk_confusion_matrices(ts_chunks, senti_model, classes, timestamp_
         cm = confusion_matrix(true_y, pred_y, labels=classes)
 
         if timestamp_col in chunk_df.columns:
-            ts_series = pd.to_datetime(chunk_df[timestamp_col])
-            timestamp = ts_series.min() + (ts_series.max() - ts_series.min()) / 2
+            timestamp = chunk_df[timestamp_col].iloc[0]
         else:
             timestamp = None
 
