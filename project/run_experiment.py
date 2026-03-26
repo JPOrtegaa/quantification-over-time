@@ -1,14 +1,23 @@
 import argparse
 import re
 import warnings
+from datetime import datetime, timezone
 
 import config
-import data_loading as data_loading
+from classification import Classifying
+import data_loading_old as data_loading
 import numpy as np
 import pandas as pd
 import quantifications as qfy
 import utils
-from regression import trainingModel as regression_trainingModel
+from regression.toms_multi_regressor import (
+    TOMSMultiRegressorBundle,
+    attach_window_ids,
+    fit_toms_multi_regressors,
+    log_validation_and_test_matrices,
+    scalar_time_per_window,
+    write_bundle_window_scores_csv,
+)
 from time_series_adjustment import KalmanMA, MovingAverage
 from tqdm import tqdm
 from utils import params_KFMA
@@ -16,9 +25,9 @@ from utils import params_KFMA
 warnings.filterwarnings("ignore")
 
 seeds = [1, 2, 3]
-# Janelas temporais iniciais usadas como validação (treino do regressor / referência quantificação).
+# First VAL_LENGTH time windows: validation (regressor training + quantification reference).
 VAL_LENGTH = 15
-# Após o split, no máximo estes chunks entram como teste temporal (corta a série no fim).
+# After the split, at most this many additional chunks are kept as temporal test (truncates tail).
 MAX_TEST_CHUNKS = 5000
 DATASET = ("global_covid19_tweets", VAL_LENGTH)
 CLASSIFIERS = ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"]
@@ -30,6 +39,7 @@ REGRESSOR_TIME_COLUMN = "TweetAt"
 REGRESSOR_NAME = "TSMN"
 REGRESSOR_TSMN_KWARGS = {"tsmn_mode": "polynomial", "tsmn_degree": 3}
 unified_window = 4
+REGRESSOR_LOG_PATH = config.PROJECT_ROOT / "regressor" / "toms_regressor_log.txt"
 
 _LOG_PREFIX = "[run_experiment]"
 
@@ -39,29 +49,28 @@ def _log(msg: str) -> None:
 
 
 def load_textual_series(dataset_name):
-    _log(f"Carregando série textual: {dataset_name!r} …")
+    _log(f"Loading textual time series: {dataset_name!r} …")
     out = data_loading.loading(dataset_name)
-    _log(f"Dados carregados ({dataset_name!r}).")
+    _log(f"Data loaded ({dataset_name!r}).")
     return out
 
 
 def truncate_time_series_chunks(ts_chunks, ts_prevalence, val_length, max_test_chunks):
     """
-    Mantém só os primeiros (val_length + max_test_chunks) chunks da série,
-    alinhado às linhas de ts_prevalence.
+    Keep only the first (val_length + max_test_chunks) chunks, aligned with ts_prevalence rows.
     """
     n_total = len(ts_chunks)
     n_keep = val_length + max_test_chunks
     if n_total <= n_keep:
         _log(
-            f"Série não truncada: só há {n_total} chunks "
+            f"Series not truncated: only {n_total} chunk(s) "
             f"(≤ val_length+max_test={n_keep})."
         )
         return ts_chunks, ts_prevalence
     ts_new = {i: ts_chunks[i] for i in range(n_keep)}
     prev_new = ts_prevalence.iloc[:n_keep].copy().reset_index(drop=True)
     _log(
-        f"Série truncada: {n_total} → {n_keep} chunks "
+        f"Series truncated: {n_total} → {n_keep} chunks "
         f"(val_length={val_length}, max_test_chunks={max_test_chunks})."
     )
     return ts_new, prev_new
@@ -78,26 +87,11 @@ def compute_initial_window_and_split(dataset, ts_chunks, ts_prevalence):
         ts_chunks.copy(), ts_prevalence, dataset[1]
     )
     _log(
-        "Split val/test: "
-        f"len(val_set)={len(val_set)} linhas, "
-        f"chunks de teste={len(test_sets)}, "
+        "Train/val vs test split: "
+        f"val_set rows={len(val_set)}, test chunks={len(test_sets)}, "
         f"val_length={dataset[1]}."
     )
     return inital_value, val_true, val_set, test_sets, test_dsts
-
-
-def fit_time_classifier_output_regressor(val_set, classifier, classes, time_column, random_state):
-    _log(
-        "TOMS: preparando (X=tempo, Y=scores) e treinando regressor "
-        f"({REGRESSOR_NAME!r}, seed={random_state}) em {len(val_set)} linhas …"
-    )
-    X, Y = qfy.prepare_regressor_training_arrays(val_set, classifier, classes, time_column)
-    _log(f"TOMS: shapes treino regressor X={X.shape}, Y={Y.shape}.")
-    reg = regression_trainingModel.trainer(
-        X, Y, REGRESSOR_NAME, random_state, **REGRESSOR_TSMN_KWARGS
-    )
-    _log("TOMS: regressor treinado.")
-    return reg
 
 
 def run_validation_quantification(
@@ -113,8 +107,8 @@ def run_validation_quantification(
     time_column=None,
 ):
     _log(
-        "Etapa validação (getMAE_val_set): "
-        f"qua={quantifier!r}, regressor={'sim' if regressor is not None else 'não'}."
+        "Validation step (getMAE_val_set): "
+        f"quantifier={quantifier!r}, regressor={'yes' if regressor is not None else 'no'}."
     )
     return qfy.getMAE_val_set(
         val_set,
@@ -142,14 +136,19 @@ def run_test_quantification(
     regressor=None,
     time_column=None,
 ):
+    extra = "."
+    if regressor is not None:
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            extra = (
+                " — val: scores from row-mean of M (K time regressors); "
+                "test: classifier (HF) scores only."
+            )
+        else:
+            extra = " — test chunks scored only via time regressor (no HF)."
     _log(
-        "Etapa teste (qtfied_dists): "
-        f"qua={quantifier!r}, regressor={'sim' if regressor is not None else 'não'}"
-        + (
-            " — scores dos chunks de teste só via tempo+regressor (sem HF)."
-            if regressor is not None
-            else "."
-        )
+        "Test step (qtfied_dists): "
+        f"quantifier={quantifier!r}, regressor={'yes' if regressor is not None else 'no'}"
+        f"{extra}"
     )
     return qfy.qtfied_dists(
         val_set,
@@ -177,10 +176,10 @@ def tsa_adjust_and_mae(
 ):
     qua_mae = utils.mae(test_dsts, quantified_dsts)
     if tsa == "QFY":
-        _log(f"Ajuste temporal: QFY somente (MAE quantificação pura) = {qua_mae:.6f}.")
+        _log(f"Temporal adjustment: QFY only (raw quantification MAE) = {qua_mae:.6f}.")
         return qua_mae
 
-    _log(f"Ajuste temporal: aplicando {tsa!r} sobre prevalências quantificadas …")
+    _log(f"Temporal adjustment: applying {tsa!r} to quantified prevalences …")
     modified_dsts = []
     val_init_value = np.empty((0, len(c)))
     validation = [val_init_value, val_pred_dists, val_true, c, unified_window]
@@ -212,7 +211,7 @@ def tsa_adjust_and_mae(
     modified_dsts = np.array(modified_dsts).T
     modified_dsts = modified_dsts / (np.sum(modified_dsts, axis=1).reshape(-1, 1))
     combi = utils.mae(test_dsts, modified_dsts)
-    _log(f"Ajuste temporal {tsa!r} concluído (MAE combinado) = {combi:.6f}.")
+    _log(f"Temporal adjustment {tsa!r} done (combined MAE) = {combi:.6f}.")
     return combi
 
 
@@ -221,10 +220,10 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
         raise ValueError("TOMS only supports tsa='QFY'")
 
     _log(
-        "=== experimento === "
+        "=== experiment === "
         f"dataset={dataset[0]!r}, exp_type={exp_type!r}, "
-        f"qua={quantifier!r}, tsa={tsa!r}, seed={random_state} "
-        f"(classificador {str(classifier)[:50]}…)"
+        f"quantifier={quantifier!r}, tsa={tsa!r}, seed={random_state} "
+        f"(classifier {str(classifier)[:50]}…)"
     )
 
     ts_chunks, ts_prevalence, c, ts_info = load_textual_series(dataset[0])
@@ -236,64 +235,115 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
         compute_initial_window_and_split(dataset, ts_chunks, ts_prevalence)
     )
 
+    window_t = scalar_time_per_window(ts_chunks, REGRESSOR_TIME_COLUMN)
+    val_set = attach_window_ids(val_set, ts_chunks, dataset[1])
+
     clf_slug = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(classifier))[:80]
     clf_out = (
         config.OUTPUT_CLASSIFICATION_DIR
         / f"classifier_window_scores_{dataset[0]}_{quantifier}_seed{random_state}_{clf_slug}.csv"
     )
-    qfy.write_classifier_window_scores_table(
-        ts_chunks, c, classifier, val_length=dataset[1], out_path=clf_out
-    )
-    _log(f"Tabela de scores do classificador por janela salva em {clf_out}.")
+    Classifying.HF_PHASE_HINT = "clf CSV / window"
+    try:
+        qfy.write_classifier_window_scores_table(
+            ts_chunks, c, classifier, val_length=dataset[1], out_path=clf_out
+        )
+    finally:
+        Classifying.HF_PHASE_HINT = None
+    _log(f"Classifier window score table saved to {clf_out}.")
 
     regressor = None
     time_column = None
     if exp_type == "TOMS":
-        regressor = fit_time_classifier_output_regressor(
-            val_set, classifier, c, REGRESSOR_TIME_COLUMN, random_state
-        )
         time_column = REGRESSOR_TIME_COLUMN
+        ts_run = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        REGRESSOR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(REGRESSOR_LOG_PATH, "a", encoding="utf-8") as lf:
+            lf.write(
+                f"\n{'=' * 72}\n"
+                f"TOMS multi-regressor run | utc={ts_run}\n"
+                f"dataset={dataset[0]!r} quantifier={quantifier!r} seed={random_state}\n"
+                f"classifier={str(classifier)[:120]}\n"
+                f"window_t (first 5 windows): "
+                f"{ {w: window_t[w] for w in sorted(window_t.keys())[:5]} }\n"
+            )
+        _log(
+            "TOMS: training K class-conditional time regressors (scalar t per window); "
+            f"log file: {REGRESSOR_LOG_PATH}."
+        )
+        Classifying.HF_PHASE_HINT = "TOMS train: val Y (HF)"
+        try:
+            regressor = fit_toms_multi_regressors(
+                val_set,
+                classifier,
+                c,
+                window_t,
+                REGRESSOR_NAME,
+                random_state,
+                REGRESSOR_LOG_PATH,
+                **REGRESSOR_TSMN_KWARGS,
+            )
+        finally:
+            Classifying.HF_PHASE_HINT = None
+        _log("TOMS: regressors trained.")
         reg_out = (
             config.OUTPUT_REGRESSOR_DIR
             / f"regressor_window_scores_{dataset[0]}_{quantifier}_seed{random_state}_{clf_slug}.csv"
         )
-        qfy.write_regressor_window_scores_table(
-            ts_chunks,
-            c,
-            regressor,
-            REGRESSOR_TIME_COLUMN,
-            val_length=dataset[1],
-            out_path=reg_out,
+        write_bundle_window_scores_csv(
+            ts_chunks, c, regressor, val_length=dataset[1], out_path=reg_out
         )
-        _log(f"Tabela de scores do regressor por janela salva em {reg_out}.")
+        _log(f"TOMS bundle table (M + row-mean scores) saved to {reg_out}.")
 
-    val_MAE, val_MSE, sep_mae, val_pred_dists = run_validation_quantification(
-        val_set,
-        quantifier,
-        classifier,
-        c,
-        ts_chunks,
-        dataset,
-        ts_info,
-        random_state,
-        regressor=regressor,
-        time_column=time_column,
-    )
-    _log("Validação concluída; métricas val obtidas.")
+    Classifying.HF_PHASE_HINT = f"val MAE | {quantifier}"
+    try:
+        val_MAE, val_MSE, sep_mae, val_pred_dists = run_validation_quantification(
+            val_set,
+            quantifier,
+            classifier,
+            c,
+            ts_chunks,
+            dataset,
+            ts_info,
+            random_state,
+            regressor=regressor,
+            time_column=time_column,
+        )
+    finally:
+        Classifying.HF_PHASE_HINT = None
+    _log("Validation finished; val metrics available.")
 
-    quantified_dsts = run_test_quantification(
-        val_set,
-        test_sets,
-        dataset,
-        quantifier,
-        classifier,
-        c,
-        ts_info,
-        random_state,
-        regressor=regressor,
-        time_column=time_column,
-    )
-    _log(f"Quantificação no teste concluída (formato prevalências: {quantified_dsts.shape}).")
+    Classifying.HF_PHASE_HINT = f"test qtfy | {quantifier}"
+    try:
+        quantified_dsts = run_test_quantification(
+            val_set,
+            test_sets,
+            dataset,
+            quantifier,
+            classifier,
+            c,
+            ts_info,
+            random_state,
+            regressor=regressor,
+            time_column=time_column,
+        )
+    finally:
+        Classifying.HF_PHASE_HINT = None
+    _log(f"Test quantification finished (prevalence array shape: {quantified_dsts.shape}).")
+
+    if exp_type == "TOMS" and regressor is not None:
+        log_validation_and_test_matrices(
+            regressor,
+            val_set,
+            ts_chunks,
+            test_sets,
+            classifier,
+            c,
+            REGRESSOR_TIME_COLUMN,
+            dataset[1],
+            REGRESSOR_LOG_PATH,
+        )
+        _log(f"Validation/test matrices appended to {REGRESSOR_LOG_PATH}.")
 
     mae_out = tsa_adjust_and_mae(
         tsa,
@@ -305,7 +355,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
         c,
         val_MSE,
     )
-    _log(f"=== fim experimento (MAE final deste run) = {mae_out:.6f} ===")
+    _log(f"=== end experiment (final MAE this run) = {mae_out:.6f} ===")
     return mae_out
 
 
@@ -337,17 +387,17 @@ def run_textual_experiments(quick: bool = False):
 
     if quick:
         _log(
-            "MODO RÁPIDO (--quick): "
-            f"seeds={run_seeds}, qua={run_qua}, TSA(original)={run_tsa}, "
-            f"EXP_TYPES={run_exp} (tqdm total menor)."
+            "QUICK mode (--quick): "
+            f"seeds={run_seeds}, qua={run_qua}, TSA(when original)={run_tsa}, "
+            f"EXP_TYPES={run_exp} (smaller tqdm total)."
         )
     _log(
-        "Iniciando grid global textual: "
+        "Starting global textual grid: "
         f"seeds={run_seeds}, EXP_TYPES={run_exp}, qua_methods={run_qua}, "
-        f"TSA_methods={run_tsa} (TOMS usa só QFY); "
-        f"loky_jobs={config.TEST_CHUNK_LOKY_JOBS}, "
-        f"HF_batch={config.HF_INFERENCE_BATCH_SIZE}, "
-        f"sklearn_n_jobs={config.SKLEARN_N_JOBS}."
+        f"TSA_methods={run_tsa} (TOMS uses QFY only); "
+        f"parallel_test_chunks={config.TEST_CHUNK_LOKY_JOBS}, "
+        f"HF_INFERENCE_BATCH_SIZE={config.HF_INFERENCE_BATCH_SIZE}, "
+        f"SKLEARN_N_JOBS={config.SKLEARN_N_JOBS}."
     )
     seed_tables = []
     total_steps = (
@@ -368,7 +418,7 @@ def run_textual_experiments(quick: bool = False):
     )
 
     for seed in run_seeds:
-        _log(f"--- Nova rodada: seed={seed} ---")
+        _log(f"--- New round: seed={seed} ---")
         idx = 0
         outputfile = pd.DataFrame({col: [] for col in columns})
         for exp_type in run_exp:
@@ -398,11 +448,11 @@ def run_textual_experiments(quick: bool = False):
                     idx += 1
 
         seed_tables.append(outputfile)
-        _log(f"Seed {seed}: tabela desta semente com {len(outputfile)} linhas.")
+        _log(f"Seed {seed}: table for this seed has {len(outputfile)} row(s).")
     pbar.close()
 
     metric_cols = ["QFY", "MA", "KFMA"]
-    _log(f"Agregando média sobre {len(seed_tables)} seeds …")
+    _log(f"Averaging over {len(seed_tables)} seed(s) …")
     tot = aggregate_mean_over_seeds(seed_tables, metric_cols)
     tot_res = seed_tables[0][["Dataset", "ExpType", "QuaMethod", "Classifier"]].copy()
     for i, m in enumerate(metric_cols):
@@ -418,7 +468,7 @@ def run_textual_experiments(quick: bool = False):
     )
     out_path = config.OUTPUT_DIR / out_name
     tot_res.to_csv(out_path)
-    _log(f"Resultados salvos em {out_path}.")
+    _log(f"Results saved to {out_path}.")
 
 
 if __name__ == "__main__":
@@ -433,11 +483,11 @@ if __name__ == "__main__":
         "--quick",
         action="store_true",
         help=(
-            "Smoke test: 1 seed, só DyS, só QFY no original (+ TOMS com QFY). "
-            "Salva em MAE_quanti_results_mean_global_textual_quick.csv"
+            "Smoke test: 1 seed, DyS only, QFY only for original (+ TOMS with QFY). "
+            "Writes MAE_quanti_results_mean_global_textual_quick.csv"
         ),
     )
     args = parser.parse_args()
     _log(f"__main__: args.run={args.run!r}, quick={args.quick}")
     run_textual_experiments(quick=args.quick)
-    _log("Execução principal concluída.")
+    _log("Main run finished.")

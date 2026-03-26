@@ -19,12 +19,12 @@ QUANT_RESULTS_DIR = PROJECT_ROOT / "quant_results"
 PLOTS_DIR = PROJECT_ROOT / "plots"
 README_IMPLEMENT_DIR = PROJECT_ROOT / "ReadMe_Implement"
 
-# Uso de CPU/RAM (defeitos conservadores para PCs com pouca memória).
-# joblib.Parallel(..., backend="loky") em quantifications: 1 = sequencial; 2+ = paralelo;
-# -1 = todos os núcleos (só se tiver RAM de sobra; cada worker pode duplicar modelo HF).
+# CPU/RAM (conservative defaults for low-memory machines).
+# quantifications joblib Parallel loky: 1 = sequential; 2+ = parallel;
+# -1 = all cores (only if you have RAM; each worker may duplicate the HF model).
 TEST_CHUNK_LOKY_JOBS = int(os.environ.get("QUA_TEST_CHUNK_JOBS", "1"))
 
-# Tamanho do batch na inferência Hugging Face (menor -> menos pico de RAM).
+# HuggingFace sentiment model: texts per forward pass (smaller → lower RAM spikes).
 HF_INFERENCE_BATCH_SIZE = int(os.environ.get("QUA_HF_BATCH_SIZE", "1000"))
 
 # LinearRegression, LogisticRegression, RandomForest, etc.

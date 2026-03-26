@@ -1,8 +1,24 @@
 import numpy as np
+from scipy.special import logsumexp
 from scipy.optimize import minimize
 
 
 def softmax(z):
+    """
+    Computes the softmax of matrix z along the last axis.
+
+    Parameters
+    ----------
+    z : np.ndarray
+        Input array (n_samples, n_classes) containing the logits (i.e., the linear combinations
+        of features X and weight matrix C).
+
+    Returns
+    -------
+    np.ndarray
+        Normalized probabilities over the classes for each sample.
+        Each row sums to 1, i.e., output shape is (n_samples, n_classes).
+    """
     z_shifted = z - np.max(z, axis=1, keepdims=True)
     exp_z = np.exp(z_shifted)
     return exp_z / np.sum(exp_z, axis=1, keepdims=True)
@@ -10,21 +26,57 @@ def softmax(z):
 
 class TimeSeriesMultinomialRegressor:
     """
-    Regressor that maps time values (e.g. days since Unix epoch) to a probability simplex via
-    logits = X @ C and probs = softmax(logits). Features X are built from time
-    with optional linear / polynomial / cyclic bases; time is min–max normalized
-    using statistics stored at fit time.
+    A multinomial logistic (softmax) regressor for time series.
+
+    This model maps time information (e.g., days since epoch) to a multinomial probability vector.
+    Concretely, time points are first transformed into features (X) using linear, polynomial,
+    or cyclic basis expansions, and min–max normalized using statistics computed at fit time.
+
+    Each class k receives a weight vector, assembled in the weight matrix C (shape: d features x K classes).
+    For a given sample, the model computes logits by the linear combination `logits = X @ C`.
+    Each logit vector ("pre-activation" for each class) is then transformed to a probability
+    vector by the softmax function: probability = softmax(logits).
+
+    Fit is performed by minimizing the negative log-likelihood (cross-entropy) between the
+    softmax output and the provided soft targets.
     """
 
     def __init__(self, mode="linear", degree=2, period=None):
+        """
+        Parameters
+        ----------
+        mode : str, optional
+            Feature construction mode:
+            - "linear"      : [1, t_norm]
+            - "polynomial"  : [1, t_norm, t_norm^2, ..., t_norm^degree]
+            - "cyclic"      : [1, sin(2πt_norm/p), cos(2πt_norm/p)]
+        degree : int, optional
+            Degree for the polynomial basis (only used if mode="polynomial").
+        period : float or None, optional
+            Period for the cyclic basis (used if mode="cyclic").
+        """
         self.mode = mode
         self.degree = degree
         self.period = period
-        self.C_ = None
-        self.t_min_ = None
-        self.t_max_ = None
+        self.C_ = None  # Weight matrix (d_features x K_classes)
+        self.t_min_ = None  # Min in training time, for normalization
+        self.t_max_ = None  # Max in training time, for normalization
 
     def _prepare_features(self, t):
+        """
+        Transform the 1D time vector into a 2D feature matrix X, according
+        to the chosen basis expansion and normalization.
+
+        Parameters
+        ----------
+        t : array-like
+            Time values of shape (n_samples,).
+
+        Returns
+        -------
+        X : np.ndarray
+            Feature matrix of shape (n_samples, n_features).
+        """
         t = np.asanyarray(t).astype(np.float64).flatten()
 
         if self.t_min_ is None or self.t_max_ is None:
@@ -41,12 +93,15 @@ class TimeSeriesMultinomialRegressor:
         ones = np.ones_like(t_norm)
 
         if self.mode == "linear":
+            # Features: [bias, normalized time]
             return np.hstack([ones, t_norm])
 
         if self.mode == "polynomial":
+            # Features: [bias, t, t^2, ..., t^degree]
             return np.vander(t_norm.ravel(), N=self.degree + 1, increasing=True)
 
         if self.mode == "cyclic":
+            # Features: [bias, sin(2πt/p), cos(2πt/p)]
             p = self.period if self.period is not None else 1.0
             if self.period is not None and range_t > 0:
                 p = float(self.period) / range_t
@@ -54,19 +109,49 @@ class TimeSeriesMultinomialRegressor:
             cosines = np.cos(2 * np.pi * t_norm / p)
             return np.hstack([ones, sines, cosines])
 
+        # Default: just the normalized time
         return t_norm
 
     def _objective(self, params, X, Y_soft):
+        """
+        Negative log-likelihood (cross-entropy) using the Log-Softmax trick
+        for numerical stability.
+        """
         d, K = X.shape[1], Y_soft.shape[1]
         C = params.reshape((d, K))
-        logits = X @ C
-        probs = softmax(logits)
-        return -np.sum(Y_soft * np.log(probs + 1e-15)) / X.shape[0]
+        
+        # 1. Compute the logits (Z = X @ C)
+        logits = X @ C  # Shape: (n_samples, n_classes)
+        
+        # 2. Log-Softmax Trick: log(softmax(z)) = z - log(sum(exp(z)))
+        # The logsumexp function stably computes the log of the sum of exponentials.
+        log_probs = logits - logsumexp(logits, axis=1, keepdims=True)
+        
+        # 3. Cross-Entropy: -sum(Y_true * log(P_pred))
+        # As log_probs is already the logarithm, we directly multiply by Y_soft.
+        # We no longer need log(probs + 1e-15)!
+        return -np.sum(Y_soft * log_probs) / X.shape[0]
 
     def fit(self, t_series, Y_soft):
         """
-        t_series: time coordinate in days or other float scale (1d or column vector)
-        Y_soft: (n_samples, n_classes) soft targets on the simplex (e.g. classifier probs)
+        Fit the weight matrix C by minimizing the cross-entropy between the target
+        soft labels and the predicted multiclass probabilities.
+
+        The input time points t_series are first min–max normalized and expanded into features X.
+        The model learns a weight matrix (C) that linearly combines the features for each class,
+        producing logits, which are then passed through the softmax function to obtain final probabilities.
+
+        Parameters
+        ----------
+        t_series : array-like, shape (n_samples,)
+            Time coordinate in days, timestamps, or other float scale.
+        Y_soft : np.ndarray, shape (n_samples, n_classes)
+            Soft targets on the probability simplex (e.g., classifier probability outputs).
+
+        Returns
+        -------
+        self : object
+            Fitted instance.
         """
         self.t_min_ = None
         self.t_max_ = None
@@ -82,18 +167,47 @@ class TimeSeriesMultinomialRegressor:
             options={"disp": False},
         )
         if not res.success:
-            print(f"Aviso de convergência (TimeSeriesMultinomialRegressor): {res.message}")
+            print(f"Convergence warning (TimeSeriesMultinomialRegressor): {res.message}")
 
-        self.C_ = res.x.reshape((d, K))
+        self.C_ = res.x.reshape((d, K))  # Learned weight matrix.
         return self
 
     def predict_proba(self, t_series):
+        """
+        Predict class probabilities for given time points.
+
+        For each time point in t_series, constructs the feature vector,
+        computes the linear combination with the weight matrix (logits = X @ C),
+        and returns the probability vector obtained by applying the softmax function.
+
+        Parameters
+        ----------
+        t_series : array-like, shape (n_samples,)
+            Time values to predict for.
+
+        Returns
+        -------
+        np.ndarray, shape (n_samples, n_classes)
+            Predicted probability for each class and sample.
+        """
         t_series = np.asanyarray(t_series, dtype=np.float64).flatten()
         X = self._prepare_features(t_series)
         logits = X @ self.C_
         return softmax(logits)
 
     def predict(self, X):
-        """Sklearn-style API: X is (n, 1) time values, as from _time_column_to_X."""
+        """
+        Sklearn-style API: Predict class probabilities for a given input array of time values.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, 1) or (n_samples,)
+            Time values to predict for. If 2D, will be converted to 1D.
+
+        Returns
+        -------
+        np.ndarray, shape (n_samples, n_classes)
+            Probability distributions over classes for each sample.
+        """
         X = np.asanyarray(X, dtype=np.float64)
         return self.predict_proba(X.ravel())

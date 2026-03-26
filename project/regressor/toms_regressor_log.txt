@@ -1,0 +1,18 @@
+
+========================================================================
+TOMS multi-regressor run | utc=2026-03-26T15:07:03Z
+dataset='global_covid19_tweets' quantifier='DyS' seed=1
+classifier=amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061
+window_t (first 5 windows): {0: 11018.0, 1: 11019.0, 2: 11020.0, 3: 11021.0, 4: 11022.0}
+--- TRAIN: K regressors (one per class) ---
+class=-1 (idx=0): n=1896, t_min=11018, t_max=11032, Y.shape=(1896, 3)
+  t_sample (first 5): [11018. 11018. 11020. 11020. 11020.]
+  Y_sample row0: [0.08931161 0.90184766 0.00884072]
+class=0 (idx=1): n=727, t_min=11019, t_max=11032, Y.shape=(727, 3)
+  t_sample (first 5): [11019. 11019. 11019. 11021. 11024.]
+  Y_sample row0: [0.01118113 0.98186964 0.00694925]
+class=1 (idx=2): n=1831, t_min=11018, t_max=11032, Y.shape=(1831, 3)
+  t_sample (first 5): [11018. 11018. 11019. 11020. 11020.]
+  Y_sample row0: [0.14836787 0.84127325 0.01035888]
+--- End of train ---
+

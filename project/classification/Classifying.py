@@ -6,6 +6,9 @@ from sklearn.metrics import accuracy_score, f1_score
 
 _MODEL_CACHE = {}
 
+# Optional coarse phase label printed together with per-call hf_context (set by run_experiment, etc.)
+HF_PHASE_HINT = None
+
 
 def get_model(mod):
     if mod not in _MODEL_CACHE:
@@ -14,13 +17,20 @@ def get_model(mod):
 
 
 # Preprocess text (username and link placeholders)
-def analyzer(df_text, mod, classes):
+def analyzer(df_text, mod, classes, hf_context=None):
     """
     :param df_text: a dataset with true labels
     :param mod: name(string) of a sentiment classifier or a trained classifier class
     :param classes: the name(string) of classes
+    :param hf_context: optional reason shown in [HF inference] logs (where / why this run)
     :return: [pred_labels, pred_scores, [acc, f1]]
     """
+    _parts = []
+    if HF_PHASE_HINT:
+        _parts.append(str(HF_PHASE_HINT).strip())
+    if hf_context:
+        _parts.append(str(hf_context).strip())
+    _hf_ctx = " · ".join(_parts) if _parts else None
 
     # PART 1: text classification for twiiter datasets
     if type(mod) == str:
@@ -46,7 +56,9 @@ def analyzer(df_text, mod, classes):
 
             else:
                 model = get_model(mod)
-                scores_batch, labels_batch = model.batch_analyze(df_x)
+                scores_batch, labels_batch = model.batch_analyze(
+                    df_x, hf_context=_hf_ctx
+                )
                 for scores, label in zip(scores_batch, labels_batch):
                     if scores[2] >= scores[0]:
                         pred_labels.append(1)
@@ -82,7 +94,9 @@ def analyzer(df_text, mod, classes):
 
             else:
                 model = get_model(mod)
-                scores_batch, labels_batch = model.batch_analyze(df_x)
+                scores_batch, labels_batch = model.batch_analyze(
+                    df_x, hf_context=_hf_ctx
+                )
                 for scores, label in zip(scores_batch, labels_batch):
                     if label == "negative" or label == "Negative" or label == "LABEL_0":
                         pred_labels.append(-1)

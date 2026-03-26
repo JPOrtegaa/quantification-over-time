@@ -7,6 +7,10 @@ import pandas as pd
 from joblib import Parallel, delayed
 from utils import mse, mae
 import config
+from regression.toms_multi_regressor import (
+    TOMSMultiRegressorBundle,
+    make_analyze_fn_toms_multi,
+)
 
 
 def _effective_loky_jobs(n_tasks):
@@ -18,9 +22,9 @@ def _effective_loky_jobs(n_tasks):
 
 def _analyze_test_chunks_parallel(test_set_dict, analyze_test, senti_model, classes, kind):
     """
-    Executa analyze_test em cada chunk de teste em paralelo (backend loky).
-    kind: "scores" -> dict[i] = DataFrame de scores; "labels" -> dict[i] = pred labels;
-          "scores_arr" -> dict[i] = ndarray sem coluna true_y.
+    Run analyze_test on each test chunk in parallel (loky backend).
+    kind: "scores" -> dict[i] = score DataFrame; "labels" -> dict[i] = pred labels;
+          "scores_arr" -> dict[i] = ndarray without true_y column.
     """
     n = len(test_set_dict)
     if n == 0:
@@ -58,8 +62,8 @@ def _analyze_test_chunks_parallel(test_set_dict, analyze_test, senti_model, clas
 
 def _time_column_to_X(time_series):
     """
-    Converte a coluna temporal em valores numéricos em **dias** (epoch UNIX em dias,
-    não segundos). Suporta datas completas e strings 'MM-DD' do loader antigo do Covid.
+    Parse time column to numeric **days** (Unix epoch in days, not seconds).
+    Supports full datetimes and legacy Covid 'MM-DD' strings.
     """
     s = time_series if isinstance(time_series, pd.Series) else pd.Series(time_series)
     t = pd.to_datetime(s, errors="coerce", dayfirst=True)
@@ -99,7 +103,12 @@ def _scores_from_regressor_time(df_text, classes, regressor, time_column):
 
 
 def analyzer_with_regressor(df_text, mod, classes, regressor, time_column):
-    _, pred_scores, metrics = Classifying.analyzer(df_text, mod, classes)
+    _, pred_scores, metrics = Classifying.analyzer(
+        df_text,
+        mod,
+        classes,
+        hf_context="legacy: HF then time-reg scores",
+    )
     new_labels, new_scores = _scores_from_regressor_time(
         df_text, classes, regressor, time_column
     )
@@ -110,7 +119,7 @@ def analyzer_with_regressor(df_text, mod, classes, regressor, time_column):
 
 
 def analyzer_regressor_test_only(df_text, mod, classes, regressor, time_column):
-    """Scores só a partir de tempo + regressor (sem inferência HF). `mod` ignorado."""
+    """Scores from time + regressor only (no HuggingFace). `mod` is ignored."""
     new_labels, new_scores = _scores_from_regressor_time(
         df_text, classes, regressor, time_column
     )
@@ -132,7 +141,12 @@ def make_analyze_fn_test_regressor_only(regressor, time_column):
 
 
 def prepare_regressor_training_arrays(val_set, classifier, classes, time_column):
-    _, pred_scores, _ = Classifying.analyzer(val_set, classifier, classes)
+    _, pred_scores, _ = Classifying.analyzer(
+        val_set,
+        classifier,
+        classes,
+        hf_context="val softmax Y",
+    )
     if time_column not in val_set.columns:
         raise KeyError(
             f"time column {time_column!r} not found; available: {list(val_set.columns)}"
@@ -150,10 +164,7 @@ def write_regressor_window_scores_table(
     val_length,
     out_path,
 ):
-    """
-    Uma linha por janela (chunk) em ordem temporal: colunas meta + score médio do
-    regressor por classe (média das probabilidades ao longo das instâncias da janela).
-    """
+    """One CSV row per window: metadata + mean regressor probability per class (legacy single model)."""
     rows = []
     for wi in sorted(ts_chunks.keys()):
         df = ts_chunks[wi]
@@ -193,14 +204,11 @@ def write_classifier_window_scores_table(
     val_length,
     out_path,
 ):
-    """
-    Uma linha por janela: mesma convenção que write_regressor_window_scores_table,
-    com score médio do classificador (HF etc.) por classe em cada chunk.
-    """
+    """One CSV row per window: mean HuggingFace classifier score per class (per chunk)."""
     rows = []
     for wi in sorted(ts_chunks.keys()):
         df = ts_chunks[wi]
-        _, pred_scores, _ = Classifying.analyzer(df, classifier, classes)
+        _, pred_scores, _ = Classifying.analyzer(df, classifier, classes, hf_context=None)
         mean_scores = pred_scores[[cl for cl in classes]].mean(axis=0).to_numpy()
         split = "val" if wi < val_length else "test"
         row = {
@@ -456,7 +464,10 @@ def getMAE_val_set(
     if regressor is not None:
         if time_column is None:
             raise ValueError("time_column is required when regressor is provided")
-        analyze_fn = make_analyze_fn(regressor, time_column)
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            analyze_fn = make_analyze_fn_toms_multi(regressor)
+        else:
+            analyze_fn = make_analyze_fn(regressor, time_column)
 
     subsamples_dict = {}
     subsamples_dsts = []
@@ -524,8 +535,12 @@ def qtfied_dists(
     if regressor is not None:
         if time_column is None:
             raise ValueError("time_column is required when regressor is provided")
-        analyze_fn = make_analyze_fn(regressor, time_column)
-        analyze_fn_test = make_analyze_fn_test_regressor_only(regressor, time_column)
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            analyze_fn = make_analyze_fn_toms_multi(regressor)
+            analyze_fn_test = Classifying.analyzer
+        else:
+            analyze_fn = make_analyze_fn(regressor, time_column)
+            analyze_fn_test = make_analyze_fn_test_regressor_only(regressor, time_column)
 
     try:
         if regressor is not None:
