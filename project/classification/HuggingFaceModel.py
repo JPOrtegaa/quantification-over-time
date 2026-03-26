@@ -13,7 +13,7 @@ import torch
 
 class SentiAnalyzer:
     def __init__(self, model):
-
+        self._model_id = model
         self.model = AutoModelForSequenceClassification.from_pretrained(model)
         self.tokenizer = AutoTokenizer.from_pretrained(model)
         self.config = AutoConfig.from_pretrained(model)
@@ -49,7 +49,14 @@ class SentiAnalyzer:
 
         return scores, l
 
-    def batch_analyze(self, texts, batch_size=None, show_progress=True):
+    def batch_analyze(
+        self,
+        texts,
+        batch_size=None,
+        show_progress=True,
+        hf_context=None,
+        announce=True,
+    ):
         if batch_size is None:
             batch_size = getattr(config, "HF_INFERENCE_BATCH_SIZE", 8)
         all_scores = []
@@ -57,12 +64,20 @@ class SentiAnalyzer:
 
         n = len(texts)
         num_batches = (n + batch_size - 1) // batch_size if n else 0
+        ctx = (hf_context or "HF sentiment").strip().replace("\n", " ")
+        if len(ctx) > 110:
+            ctx = ctx[:107] + "…"
+        if announce and n > 0:
+            print(
+                f"[HF] {ctx} | texts={n} batches={num_batches}",
+                flush=True,
+            )
         batch_indices = range(0, n, batch_size)
         if show_progress and num_batches > 0:
             batch_indices = tqdm(
                 batch_indices,
                 total=num_batches,
-                desc="HF inference",
+                desc="HF",
                 unit="batch",
                 leave=False,
             )

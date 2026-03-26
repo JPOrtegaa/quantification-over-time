@@ -1,4 +1,5 @@
 import numpy as np
+from pathlib import Path
 from quantifiers import DyS, DyS_Opt, ACC, GPAC, EDy
 from sklearn.metrics import confusion_matrix, accuracy_score, f1_score
 from classification import Classifying
@@ -6,6 +7,10 @@ import pandas as pd
 from joblib import Parallel, delayed
 from utils import mse, mae
 import config
+from regression.toms_multi_regressor import (
+    TOMSMultiRegressorBundle,
+    make_analyze_fn_toms_multi,
+)
 
 
 def _effective_loky_jobs(n_tasks):
@@ -17,9 +22,9 @@ def _effective_loky_jobs(n_tasks):
 
 def _analyze_test_chunks_parallel(test_set_dict, analyze_test, senti_model, classes, kind):
     """
-    Executa analyze_test em cada chunk de teste em paralelo (backend loky).
-    kind: "scores" -> dict[i] = DataFrame de scores; "labels" -> dict[i] = pred labels;
-          "scores_arr" -> dict[i] = ndarray sem coluna true_y.
+    Run analyze_test on each test chunk in parallel (loky backend).
+    kind: "scores" -> dict[i] = score DataFrame; "labels" -> dict[i] = pred labels;
+          "scores_arr" -> dict[i] = ndarray without true_y column.
     """
     n = len(test_set_dict)
     if n == 0:
@@ -56,10 +61,55 @@ def _analyze_test_chunks_parallel(test_set_dict, analyze_test, senti_model, clas
 
 
 def _time_column_to_X(time_series):
-    t = pd.to_datetime(time_series, errors="coerce")
+    """
+    Parse time column to numeric **days** (Unix epoch in days, not seconds).
+    Supports full datetimes and legacy Covid 'MM-DD' strings.
+    """
+    s = time_series if isinstance(time_series, pd.Series) else pd.Series(time_series)
+    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    if t.isna().any():
+        mmdd = s.astype(str).str.strip() + "-2000"
+        t_fallback = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
+        t = t.where(~t.isna(), t_fallback)
     if t.isna().any():
         raise ValueError("Time column contains invalid or missing datetimes after parsing.")
-    return (t.astype("int64").to_numpy(dtype=np.float64) / 1e9).reshape(-1, 1)
+    ns = t.astype("int64").to_numpy(dtype=np.float64)
+    return (ns / (86400.0 * 1e9)).reshape(-1, 1)
+
+
+def _window_day_label(df: pd.DataFrame, time_column: str) -> str:
+    """Human-readable calendar label for a chunk (median day, or raw if parse fails)."""
+    if time_column not in df.columns or len(df) == 0:
+        return "?"
+    s = df[time_column]
+    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    if t.isna().all():
+        mmdd = s.astype(str).str.strip() + "-2000"
+        t = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
+    if t.notna().any():
+        med = t.median()
+        try:
+            return str(med.date())
+        except (ValueError, AttributeError):
+            return str(med)[:16]
+    return str(s.iloc[0])[:24]
+
+
+def date_span_label(df: pd.DataFrame, time_column: str) -> str:
+    """Min..max calendar dates in a multi-window dataframe (for HF log lines)."""
+    if time_column not in df.columns or len(df) == 0:
+        return ""
+    s = df[time_column]
+    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    if t.isna().all():
+        mmdd = s.astype(str).str.strip() + "-2000"
+        t = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
+    if t.notna().any():
+        try:
+            return f"{t.min().date()}→{t.max().date()}"
+        except (ValueError, AttributeError):
+            return f"{t.min()}→{t.max()}"
+    return ""
 
 
 def _scores_from_regressor_time(df_text, classes, regressor, time_column):
@@ -88,7 +138,12 @@ def _scores_from_regressor_time(df_text, classes, regressor, time_column):
 
 
 def analyzer_with_regressor(df_text, mod, classes, regressor, time_column):
-    _, pred_scores, metrics = Classifying.analyzer(df_text, mod, classes)
+    _, pred_scores, metrics = Classifying.analyzer(
+        df_text,
+        mod,
+        classes,
+        hf_context="legacy: HF then time-reg scores",
+    )
     new_labels, new_scores = _scores_from_regressor_time(
         df_text, classes, regressor, time_column
     )
@@ -99,7 +154,7 @@ def analyzer_with_regressor(df_text, mod, classes, regressor, time_column):
 
 
 def analyzer_regressor_test_only(df_text, mod, classes, regressor, time_column):
-    """Scores só a partir de tempo + regressor (sem inferência HF). `mod` ignorado."""
+    """Scores from time + regressor only (no HuggingFace). `mod` is ignored."""
     new_labels, new_scores = _scores_from_regressor_time(
         df_text, classes, regressor, time_column
     )
@@ -121,7 +176,12 @@ def make_analyze_fn_test_regressor_only(regressor, time_column):
 
 
 def prepare_regressor_training_arrays(val_set, classifier, classes, time_column):
-    _, pred_scores, _ = Classifying.analyzer(val_set, classifier, classes)
+    _, pred_scores, _ = Classifying.analyzer(
+        val_set,
+        classifier,
+        classes,
+        hf_context="val softmax Y",
+    )
     if time_column not in val_set.columns:
         raise KeyError(
             f"time column {time_column!r} not found; available: {list(val_set.columns)}"
@@ -129,6 +189,82 @@ def prepare_regressor_training_arrays(val_set, classifier, classes, time_column)
     X = _time_column_to_X(val_set[time_column])
     Y = pred_scores[[cl for cl in classes]].to_numpy()
     return X, Y
+
+
+def write_regressor_window_scores_table(
+    ts_chunks,
+    classes,
+    regressor,
+    time_column,
+    val_length,
+    out_path,
+):
+    """One CSV row per window: metadata + mean regressor probability per class (legacy single model)."""
+    rows = []
+    for wi in sorted(ts_chunks.keys()):
+        df = ts_chunks[wi]
+        if time_column not in df.columns:
+            raise KeyError(
+                f"time column {time_column!r} missing in window {wi}; "
+                f"columns={list(df.columns)}"
+            )
+        X = _time_column_to_X(df[time_column])
+        pred = regressor.predict(X)
+        pred = np.asarray(pred, dtype=np.float64)
+        if pred.ndim == 1:
+            pred = pred.reshape(-1, 1)
+        pred = np.clip(pred, 1e-8, None)
+        rs = pred.sum(axis=1, keepdims=True)
+        pred = pred / np.where(rs > 0, rs, 1.0)
+        mean_scores = pred.mean(axis=0)
+        split = "val" if wi < val_length else "test"
+        row = {
+            "window_index": wi,
+            "split": split,
+            "n_samples": int(len(df)),
+        }
+        for i, cl in enumerate(classes):
+            row[f"score_{cl}"] = float(mean_scores[i])
+        rows.append(row)
+    out_df = pd.DataFrame(rows)
+    path = Path(out_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out_df.to_csv(path, index=False)
+
+
+def write_classifier_window_scores_table(
+    ts_chunks,
+    classes,
+    classifier,
+    val_length,
+    out_path,
+    time_column: str = None,
+):
+    """One CSV row per window: mean HuggingFace classifier score per class (per chunk)."""
+    rows = []
+    for wi in sorted(ts_chunks.keys()):
+        df = ts_chunks[wi]
+        day = _window_day_label(df, time_column) if time_column else f"win{wi}"
+        split = "val" if wi < val_length else "test"
+        _, pred_scores, _ = Classifying.analyzer(
+            df,
+            classifier,
+            classes,
+            hf_context=f"w{wi} {split} day≈{day}",
+        )
+        mean_scores = pred_scores[[cl for cl in classes]].mean(axis=0).to_numpy()
+        row = {
+            "window_index": wi,
+            "split": split,
+            "n_samples": int(len(df)),
+        }
+        for i, cl in enumerate(classes):
+            row[f"score_{cl}"] = float(mean_scores[i])
+        rows.append(row)
+    out_df = pd.DataFrame(rows)
+    path = Path(out_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out_df.to_csv(path, index=False)
 
 
 def ACC_on_TSsets(
@@ -370,12 +506,20 @@ def getMAE_val_set(
     if regressor is not None:
         if time_column is None:
             raise ValueError("time_column is required when regressor is provided")
-        analyze_fn = make_analyze_fn(regressor, time_column)
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            analyze_fn = make_analyze_fn_toms_multi(regressor)
+        else:
+            analyze_fn = make_analyze_fn(regressor, time_column)
 
     subsamples_dict = {}
     subsamples_dsts = []
     for i in range(name[1]):
-        subsamples_dict[i] = data[i]
+        dfc = data[i].copy()
+        if regressor is not None and isinstance(
+            regressor, TOMSMultiRegressorBundle
+        ):
+            dfc["_window_id"] = i
+        subsamples_dict[i] = dfc
         s = subsamples_dict[i].value_counts("label").sum()
         p = []
         for label in c:
@@ -438,8 +582,24 @@ def qtfied_dists(
     if regressor is not None:
         if time_column is None:
             raise ValueError("time_column is required when regressor is provided")
-        analyze_fn = make_analyze_fn(regressor, time_column)
-        analyze_fn_test = make_analyze_fn_test_regressor_only(regressor, time_column)
+        if isinstance(regressor, TOMSMultiRegressorBundle):
+            analyze_fn = make_analyze_fn_toms_multi(regressor)
+            analyze_fn_test = Classifying.analyzer
+            val_len = int(dataname[1])
+            data_dict = {k: v.copy() for k, v in data_dict.items()}
+            for j in list(data_dict.keys()):
+                df = data_dict[j]
+                gw = val_len + int(j)
+                try:
+                    df.attrs["hf_log"] = (
+                        f"test window {gw} day≈{_window_day_label(df, time_column)}"
+                    )
+                except AttributeError:
+                    pass
+                data_dict[j] = df
+        else:
+            analyze_fn = make_analyze_fn(regressor, time_column)
+            analyze_fn_test = make_analyze_fn_test_regressor_only(regressor, time_column)
 
     try:
         if regressor is not None:

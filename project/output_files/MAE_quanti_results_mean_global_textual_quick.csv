@@ -1,2 +1,2 @@
 ,Dataset,ExpType,QuaMethod,Classifier,QFY,MA,KFMA,best_method
-0,global_covid19_tweets,TOMS,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.1160697070819429,,,QFY
+0,global_covid19_tweets,TOMS,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.10667720250780456,,,QFY
