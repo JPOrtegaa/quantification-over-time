@@ -1,6 +1,6 @@
 import numpy as np
 from quantifiers import DyS, DyS_Opt, ACC, GPAC, EDy
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, accuracy_score, f1_score
 from classification import Classifying
 import pandas as pd
 from joblib import Parallel, delayed
@@ -537,3 +537,43 @@ def qtfied_dists(
             pd_quantified_dsts.to_csv(results_file)
 
     return quantified_dsts
+
+
+def compute_chunk_confusion_matrices(ts_chunks, senti_model, classes, timestamp_col="TweetAt"):
+    """Classify every chunk and return per-chunk confusion matrices with timestamps.
+
+    Returns a DataFrame with one row per chunk containing:
+      chunk_idx, timestamp, true_{c}_pred_{c'} cells, accuracy, f1_macro
+    """
+    chunk_labels = _analyze_test_chunks_parallel(
+        ts_chunks, Classifying.analyzer, senti_model, classes, "labels"
+    )
+
+    rows = []
+    for i in sorted(ts_chunks.keys()):
+        chunk_df = ts_chunks[i]
+        pred_labels = chunk_labels[i]
+        true_y = pred_labels["true_y"]
+        pred_y = pred_labels["pred_y"]
+
+        cm = confusion_matrix(true_y, pred_y, labels=classes)
+
+        if timestamp_col in chunk_df.columns:
+            ts_series = pd.to_datetime(chunk_df[timestamp_col])
+            timestamp = ts_series.min() + (ts_series.max() - ts_series.min()) / 2
+        else:
+            timestamp = None
+
+        row = {
+            "chunk_idx": i,
+            "timestamp": timestamp,
+        }
+        for ri, true_c in enumerate(classes):
+            for ci, pred_c in enumerate(classes):
+                row[f"true_{true_c}_pred_{pred_c}"] = int(cm[ri, ci])
+
+        row["accuracy"] = accuracy_score(true_y, pred_y)
+        row["f1_macro"] = f1_score(true_y, pred_y, average="macro")
+        rows.append(row)
+
+    return pd.DataFrame(rows)
