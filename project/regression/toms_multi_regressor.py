@@ -196,7 +196,9 @@ def scores_dataframe_from_bundle(
     Retorna (DataFrame de scores + true_y), e a lista de matrizes M por linha (para log opcional).
     """
     if "_window_id" not in df_text.columns:
-        raise ValueError("scores_dataframe_from_bundle requer coluna '_window_id' no DataFrame.")
+        raise ValueError(
+            "scores_dataframe_from_bundle requires a '_window_id' column on the DataFrame."
+        )
     wids = df_text["_window_id"].to_numpy()
     rows_scores = []
     matrices = []

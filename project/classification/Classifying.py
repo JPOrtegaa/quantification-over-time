@@ -30,6 +30,13 @@ def analyzer(df_text, mod, classes, hf_context=None):
         _parts.append(str(HF_PHASE_HINT).strip())
     if hf_context:
         _parts.append(str(hf_context).strip())
+    try:
+        if hasattr(df_text, "attrs"):
+            extra = df_text.attrs.get("hf_log")
+            if extra:
+                _parts.append(str(extra).strip())
+    except (AttributeError, TypeError):
+        pass
     _hf_ctx = " · ".join(_parts) if _parts else None
 
     # PART 1: text classification for twiiter datasets

@@ -77,6 +77,41 @@ def _time_column_to_X(time_series):
     return (ns / (86400.0 * 1e9)).reshape(-1, 1)
 
 
+def _window_day_label(df: pd.DataFrame, time_column: str) -> str:
+    """Human-readable calendar label for a chunk (median day, or raw if parse fails)."""
+    if time_column not in df.columns or len(df) == 0:
+        return "?"
+    s = df[time_column]
+    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    if t.isna().all():
+        mmdd = s.astype(str).str.strip() + "-2000"
+        t = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
+    if t.notna().any():
+        med = t.median()
+        try:
+            return str(med.date())
+        except (ValueError, AttributeError):
+            return str(med)[:16]
+    return str(s.iloc[0])[:24]
+
+
+def date_span_label(df: pd.DataFrame, time_column: str) -> str:
+    """Min..max calendar dates in a multi-window dataframe (for HF log lines)."""
+    if time_column not in df.columns or len(df) == 0:
+        return ""
+    s = df[time_column]
+    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    if t.isna().all():
+        mmdd = s.astype(str).str.strip() + "-2000"
+        t = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
+    if t.notna().any():
+        try:
+            return f"{t.min().date()}→{t.max().date()}"
+        except (ValueError, AttributeError):
+            return f"{t.min()}→{t.max()}"
+    return ""
+
+
 def _scores_from_regressor_time(df_text, classes, regressor, time_column):
     if time_column not in df_text.columns:
         raise KeyError(
@@ -203,14 +238,21 @@ def write_classifier_window_scores_table(
     classifier,
     val_length,
     out_path,
+    time_column: str = None,
 ):
     """One CSV row per window: mean HuggingFace classifier score per class (per chunk)."""
     rows = []
     for wi in sorted(ts_chunks.keys()):
         df = ts_chunks[wi]
-        _, pred_scores, _ = Classifying.analyzer(df, classifier, classes, hf_context=None)
-        mean_scores = pred_scores[[cl for cl in classes]].mean(axis=0).to_numpy()
+        day = _window_day_label(df, time_column) if time_column else f"win{wi}"
         split = "val" if wi < val_length else "test"
+        _, pred_scores, _ = Classifying.analyzer(
+            df,
+            classifier,
+            classes,
+            hf_context=f"w{wi} {split} day≈{day}",
+        )
+        mean_scores = pred_scores[[cl for cl in classes]].mean(axis=0).to_numpy()
         row = {
             "window_index": wi,
             "split": split,
@@ -472,7 +514,12 @@ def getMAE_val_set(
     subsamples_dict = {}
     subsamples_dsts = []
     for i in range(name[1]):
-        subsamples_dict[i] = data[i]
+        dfc = data[i].copy()
+        if regressor is not None and isinstance(
+            regressor, TOMSMultiRegressorBundle
+        ):
+            dfc["_window_id"] = i
+        subsamples_dict[i] = dfc
         s = subsamples_dict[i].value_counts("label").sum()
         p = []
         for label in c:
@@ -538,6 +585,18 @@ def qtfied_dists(
         if isinstance(regressor, TOMSMultiRegressorBundle):
             analyze_fn = make_analyze_fn_toms_multi(regressor)
             analyze_fn_test = Classifying.analyzer
+            val_len = int(dataname[1])
+            data_dict = {k: v.copy() for k, v in data_dict.items()}
+            for j in list(data_dict.keys()):
+                df = data_dict[j]
+                gw = val_len + int(j)
+                try:
+                    df.attrs["hf_log"] = (
+                        f"test window {gw} day≈{_window_day_label(df, time_column)}"
+                    )
+                except AttributeError:
+                    pass
+                data_dict[j] = df
         else:
             analyze_fn = make_analyze_fn(regressor, time_column)
             analyze_fn_test = make_analyze_fn_test_regressor_only(regressor, time_column)

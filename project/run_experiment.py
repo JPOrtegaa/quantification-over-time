@@ -246,7 +246,12 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
     Classifying.HF_PHASE_HINT = "clf CSV / window"
     try:
         qfy.write_classifier_window_scores_table(
-            ts_chunks, c, classifier, val_length=dataset[1], out_path=clf_out
+            ts_chunks,
+            c,
+            classifier,
+            val_length=dataset[1],
+            out_path=clf_out,
+            time_column=REGRESSOR_TIME_COLUMN,
         )
     finally:
         Classifying.HF_PHASE_HINT = None
@@ -273,6 +278,12 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
         )
         Classifying.HF_PHASE_HINT = "TOMS train: val Y (HF)"
         try:
+            span = qfy.date_span_label(val_set, REGRESSOR_TIME_COLUMN)
+            if span:
+                try:
+                    val_set.attrs["hf_log"] = span
+                except AttributeError:
+                    pass
             regressor = fit_toms_multi_regressors(
                 val_set,
                 classifier,
