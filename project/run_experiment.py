@@ -14,17 +14,18 @@ from utils import params_KFMA
 
 warnings.filterwarnings("ignore")
 
-seeds = [1, 2, 3]
+seeds = [1]
 # Janelas temporais iniciais usadas como validação (treino do regressor / referência quantificação).
 VAL_LENGTH = 15
 # Após o split, no máximo estes chunks entram como teste temporal (corta a série no fim).
-MAX_TEST_CHUNKS = 10
+MAX_TEST_CHUNKS = 50000
 DATASET = ("global_covid19_tweets", VAL_LENGTH)
 CLASSIFIERS = ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"]
-qua_methods = ["DyS", "DyS-Opt"]
-TSA_methods = ["QFY", "MA", "KFMA"]
-#EXP_TYPES = ("original", "TOMS")
-EXP_TYPES = ["TOMS"]
+# qua_methods = ["DyS", "DyS-Opt"]
+qua_methods = ["DyS"]
+TSA_methods = ["QFY"]
+EXP_TYPES = ("original")
+# EXP_TYPES = ["TOMS"]
 REGRESSOR_TIME_COLUMN = "TweetAt"
 REGRESSOR_NAME = "TSMN"
 REGRESSOR_TSMN_KWARGS = {"tsmn_mode": "cyclic", "tsmn_degree": 3}
@@ -231,6 +232,16 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
         ts_chunks, ts_prevalence = truncate_time_series_chunks(
             ts_chunks, ts_prevalence, dataset[1], MAX_TEST_CHUNKS
         )
+
+    # --- Per-chunk confusion matrices (before val/test split) ---
+    if dataset[0] == "global_covid19_tweets":
+        cm_df = qfy.compute_chunk_confusion_matrices(
+            ts_chunks, classifier, c, timestamp_col="TweetAt"
+        )
+        cm_path = config.OUTPUT_DIR / f"confusion_matrices_{dataset[0]}.csv"
+        cm_df.to_csv(cm_path, index=False)
+        _log(f"Confusion matrices saved to {cm_path}")
+
     inital_value, val_true, val_set, test_sets, test_dsts = (
         compute_initial_window_and_split(dataset, ts_chunks, ts_prevalence)
     )
