@@ -29,6 +29,7 @@ from methods.regression.toms_multi_regressor import (
     log_validation_and_test_matrices,
     scalar_time_per_window,
     write_bundle_window_scores_csv,
+    write_toms_test_window_csvs,
 )
 from time_series_adjustment import KalmanMA, MovingAverage
 from utils import params_KFMA
@@ -329,9 +330,15 @@ def master_textual_experiment(
             )
         _log(
             cfg,
-            "TOMS: training K class-conditional time regressors (scalar t per window); "
-            f"log file: {log_path}.",
+            "TOMS: training K class-conditional regressors (per-row epoch-seconds t; "
+            f"inference uses median t per window); log file: {log_path}.",
         )
+        reg_out = (
+            config.OUTPUT_REGRESSOR_DIR
+            / f"regressor_window_scores_{dataset[0]}_{quantifier}_seed{random_state}_{clf_slug}.csv"
+        )
+        train_reg_dir = config.OUTPUT_REGRESSOR_DIR / "train"
+        test_reg_dir = config.OUTPUT_REGRESSOR_DIR / "test"
         Classifying.HF_PHASE_HINT = "TOMS train: val Y (HF)"
         try:
             span = qfy.date_span_label(val_set, cfg.regressor_time_column)
@@ -345,22 +352,39 @@ def master_textual_experiment(
                 classifier,
                 c,
                 window_t,
+                cfg.regressor_time_column,
                 cfg.regressor_label,
                 random_state,
                 log_path,
+                train_dir=train_reg_dir,
+                train_name_prefix=reg_out.stem,
                 **cfg.regressor_tsmn_kwargs,
             )
         finally:
             Classifying.HF_PHASE_HINT = None
         _log(cfg, "TOMS: regressors trained.")
-        reg_out = (
-            config.OUTPUT_REGRESSOR_DIR
-            / f"regressor_window_scores_{dataset[0]}_{quantifier}_seed{random_state}_{clf_slug}.csv"
-        )
         write_bundle_window_scores_csv(
             ts_chunks, c, regressor, val_length=dataset[1], out_path=reg_out
         )
         _log(cfg, f"TOMS bundle table (M + row-mean scores) saved to {reg_out}.")
+        _log(
+            cfg,
+            f"TOMS per-regressor train tables (K={len(c)} files) saved under {train_reg_dir} "
+            f"(prefix {reg_out.stem!r}).",
+        )
+        write_toms_test_window_csvs(
+            regressor,
+            ts_chunks,
+            c,
+            val_length=dataset[1],
+            out_dir=test_reg_dir,
+            name_prefix=reg_out.stem,
+        )
+        _log(
+            cfg,
+            f"TOMS test window matrices (t + M) saved under {test_reg_dir} "
+            f"(prefix {reg_out.stem!r}).",
+        )
 
     Classifying.HF_PHASE_HINT = f"val MAE | {quantifier}"
     try:

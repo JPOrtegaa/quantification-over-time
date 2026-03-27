@@ -1,9 +1,14 @@
 """
 TOMS: K TimeSeriesMultinomial regressors (one per class), each trained only on rows whose
-true label is that class; time per window is a scalar (one t per chunk).
+true label is that class.
+
+Training uses each row's parsed datetime as a continuous time (Unix epoch seconds, sub-day
+resolution). Inference, CSV summaries, and quantifier calibration use one scalar per window:
+the median of those seconds over all rows in the chunk.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TextIO, Tuple
@@ -15,8 +20,38 @@ from methods.classification import Classifying
 from methods.regression import trainingModel as regression_trainingModel
 
 
-def _time_column_to_days(time_series) -> np.ndarray:
-    """Same convention as quantifications._time_column_to_X (UNIX days)."""
+def _class_slug_for_filename(cl) -> str:
+    """Safe fragment for paths (e.g. class -1 -> 'neg1' or 'm1')."""
+    s = str(cl).strip()
+    if s.startswith("-"):
+        s = "neg" + s[1:]
+    return re.sub(r"[^0-9A-Za-z._-]+", "_", s).strip("_") or "class"
+
+
+def _per_regressor_train_csv_path(
+    train_dir: Path, name_prefix: str, k: int, cl
+) -> Path:
+    slug = _class_slug_for_filename(cl)
+    return Path(train_dir) / f"{name_prefix}_train_regressor_k{k}_y{slug}.csv"
+
+
+def _build_per_regressor_train_rows(
+    t_k: np.ndarray,
+    Y_k: np.ndarray,
+    classes: List,
+) -> pd.DataFrame:
+    """
+    Columns that match regressor training input only: ``t_epoch_seconds`` + one column per
+    class label (``str(c)``) with softmax scores from the classifier (shape Y_k (n, K)).
+    """
+    data: Dict[str, Any] = {"t_epoch_seconds": t_k.astype(np.float64)}
+    for j, c in enumerate(classes):
+        data[str(c)] = Y_k[:, j].astype(np.float64)
+    return pd.DataFrame(data)
+
+
+def _parse_time_series(time_series) -> pd.Series:
+    """Parse time column to timezone-naive datetimes (same rules as legacy covid MM-DD)."""
     s = time_series if isinstance(time_series, pd.Series) else pd.Series(time_series)
     t = pd.to_datetime(s, errors="coerce", dayfirst=True)
     if t.isna().any():
@@ -25,13 +60,22 @@ def _time_column_to_days(time_series) -> np.ndarray:
         t = t.where(~t.isna(), t_fallback)
     if t.isna().any():
         raise ValueError("Time column contains invalid or missing datetimes after parsing.")
+    return t
+
+
+def _time_column_to_epoch_seconds(time_series) -> np.ndarray:
+    """
+    Continuous time: nanoseconds since Unix epoch as float64 seconds (preserves hour/minute).
+    Shape (n, 1).
+    """
+    t = _parse_time_series(time_series)
     ns = t.astype("int64").to_numpy(dtype=np.float64)
-    return (ns / (86400.0 * 1e9)).reshape(-1, 1)
+    return (ns / 1e9).reshape(-1, 1)
 
 
 @dataclass
 class TOMSMultiRegressorBundle:
-    """K regressors + map window_index -> scalar t (days) + class order."""
+    """K regressors + map window_index -> scalar t (median epoch seconds in window) + class order."""
 
     regressors: List[Any]
     window_t: Dict[int, float]
@@ -39,7 +83,7 @@ class TOMSMultiRegressorBundle:
 
 
 def scalar_time_per_window(ts_chunks, time_column: str) -> Dict[int, float]:
-    """One scalar t per window: median of times (in days) over all rows in the chunk."""
+    """One scalar t per window: median of epoch seconds over all rows in the chunk."""
     out = {}
     for wi in sorted(ts_chunks.keys()):
         df = ts_chunks[wi]
@@ -48,7 +92,7 @@ def scalar_time_per_window(ts_chunks, time_column: str) -> Dict[int, float]:
                 f"time column {time_column!r} missing in window {wi}; "
                 f"columns={list(df.columns)}"
             )
-        raw_t = _time_column_to_days(df[time_column]).ravel()
+        raw_t = _time_column_to_epoch_seconds(df[time_column]).ravel()
         out[wi] = float(np.median(raw_t))
     return out
 
@@ -122,20 +166,57 @@ def write_bundle_window_scores_csv(
     pd.DataFrame(rows).to_csv(out_path, index=False)
 
 
+def write_toms_test_window_csvs(
+    bundle: TOMSMultiRegressorBundle,
+    ts_chunks,
+    classes: List,
+    val_length: int,
+    out_dir: Path,
+    name_prefix: str,
+) -> None:
+    """
+    One CSV per test window: scalar `t` (median epoch seconds) passed to the regressors
+    and entries of M(t) (same convention as the bundle table).
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    K = len(classes)
+    for wi in sorted(ts_chunks.keys()):
+        if wi < val_length:
+            continue
+        t_w = bundle.window_t[wi]
+        M = score_matrix_at_t(bundle, t_w)
+        row: Dict[str, Any] = {"t": float(t_w)}
+        for i in range(K):
+            for j in range(K):
+                row[f"M_r{i}_c{j}"] = float(M[i, j])
+        pd.DataFrame([row]).to_csv(
+            out_dir / f"{name_prefix}_window_{wi}.csv", index=False
+        )
+
+
 def fit_toms_multi_regressors(
     val_set: pd.DataFrame,
     classifier,
     classes: List,
     window_t: Dict[int, float],
+    time_column: str,
     model_name: str,
     random_state: int,
     log_file: Optional[Path],
+    train_dir: Optional[Path] = None,
+    train_name_prefix: str = "toms_train",
     **trainer_kw,
 ) -> TOMSMultiRegressorBundle:
+    if time_column not in val_set.columns:
+        raise KeyError(
+            f"time column {time_column!r} missing in val_set; "
+            f"columns={list(val_set.columns)}"
+        )
     _, pred_scores, _ = Classifying.analyzer(val_set, classifier, classes)
     Y_all = pred_scores[[cl for cl in classes]].to_numpy(dtype=np.float64)
     true_y = val_set["label"].reset_index(drop=True).astype(int).to_numpy()
-    window_ids = val_set["_window_id"].to_numpy()
+    t_all = _time_column_to_epoch_seconds(val_set[time_column]).ravel()
 
     def _log(msg: str) -> None:
         if log_file is None:
@@ -146,13 +227,23 @@ def fit_toms_multi_regressors(
 
     K = len(classes)
     regressors: List[Any] = []
+    train_dir_p = Path(train_dir) if train_dir is not None else None
+    if train_dir_p is not None:
+        train_dir_p.mkdir(parents=True, exist_ok=True)
 
     _log("--- TRAIN: K regressors (one per class) ---")
     for k, cl in enumerate(classes):
         mask = true_y == cl
         n_k = int(mask.sum())
+        if train_dir_p is not None:
+            csv_path = _per_regressor_train_csv_path(
+                train_dir_p, train_name_prefix, k, cl
+            )
         if n_k == 0:
             _log(f"class={cl} (idx={k}): no samples; using constant uniform regressor.")
+            if train_dir_p is not None:
+                empty_cols = ["t_epoch_seconds"] + [str(c) for c in classes]
+                pd.DataFrame(columns=empty_cols).to_csv(csv_path, index=False)
 
             class _UniformReg:
                 def predict(self, X, _K=K):
@@ -163,7 +254,7 @@ def fit_toms_multi_regressors(
             regressors.append(_UniformReg())
             continue
 
-        t_k = np.array([window_t[int(wi)] for wi in window_ids[mask]], dtype=np.float64)
+        t_k = t_all[mask].astype(np.float64)
         Y_k = Y_all[mask]
         _log(
             f"class={cl} (idx={k}): n={n_k}, t_min={t_k.min():.6g}, t_max={t_k.max():.6g}, "
@@ -171,6 +262,10 @@ def fit_toms_multi_regressors(
         )
         _log(f"  t_sample (first 5): {t_k[:5]}")
         _log(f"  Y_sample row0: {Y_k[0]}")
+
+        if train_dir_p is not None:
+            tr_df = _build_per_regressor_train_rows(t_k, Y_k, classes)
+            tr_df.to_csv(csv_path, index=False)
 
         reg = regression_trainingModel.trainer(
             t_k.reshape(-1, 1),
@@ -271,7 +366,7 @@ def log_validation_and_test_matrices(
             df = test_set_dict[j]
             wi = j + val_length
             if wi not in bundle.window_t:
-                raw_t = _time_column_to_days(df[time_column]).ravel()
+                raw_t = _time_column_to_epoch_seconds(df[time_column]).ravel()
                 t_w = float(np.median(raw_t))
             else:
                 t_w = bundle.window_t[wi]
