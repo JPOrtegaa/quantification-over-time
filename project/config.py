@@ -26,7 +26,7 @@ README_IMPLEMENT_DIR = PROJECT_ROOT / "methods" / "ReadMe_Implement"
 TEST_CHUNK_LOKY_JOBS = int(os.environ.get("QUA_TEST_CHUNK_JOBS", "1"))
 
 # HuggingFace sentiment model: texts per forward pass (smaller -> lower RAM spikes).
-HF_INFERENCE_BATCH_SIZE = int(os.environ.get("QUA_HF_BATCH_SIZE", "1000"))
+HF_INFERENCE_BATCH_SIZE = int(os.environ.get("QUA_HF_BATCH_SIZE", "500"))
 
 # LinearRegression, LogisticRegression, RandomForest, etc.
 SKLEARN_N_JOBS = int(os.environ.get("QUA_SKLEARN_N_JOBS", "1"))

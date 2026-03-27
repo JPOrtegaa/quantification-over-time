@@ -281,8 +281,18 @@ def master_textual_experiment(
         f"(classifier {str(classifier)[:50]}...)",
     )
 
+    if (
+        isinstance(dataset[0], str)
+        and dataset[0].startswith("hotel")
+        and cfg.regressor_time_column == "TweetAt"
+    ):
+        cfg.regressor_time_column = "date"
+        _log(cfg, "Hotel dataset: regressor_time_column set to 'date' (full ISO timestamps → Unix).")
+
     ts_chunks, ts_prevalence, c, ts_info = load_textual_series(cfg, dataset[0])
-    if dataset[0] == "global_covid19_tweets":
+    if dataset[0] == "global_covid19_tweets" or (
+        isinstance(dataset[0], str) and dataset[0].startswith("hotel")
+    ):
         ts_chunks, ts_prevalence = truncate_time_series_chunks(
             cfg, ts_chunks, ts_prevalence, dataset[1], cfg.max_test_chunks
         )

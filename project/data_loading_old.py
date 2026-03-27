@@ -100,6 +100,60 @@ def global_covid19_tweets():
     return data_dict, prevalence_df, [-1, 0, 1], DEFAULT_STRIDE_RATIO
 
 
+def hotel_dataset(hotel_num: int):
+    """
+    Hotel review CSVs under ``DATA_DIR/hotel-datasets/hotel{n}.csv`` (columns: text, date, class; optional rating).
+
+    * **Windows**: one chunk per UTC calendar month (``date`` kept at full timestamp for each row).
+    * **Labels**: ``class`` 0/1 are mapped to **-1 / 1** for the 2-class ``Classifying`` / HF pipeline.
+    * **Time** for TOMS: ``date`` is parsed with timezone; ``toms_multi_regressor`` uses epoch seconds per row
+      for training and the per-window **median** of those seconds at test (same as global Covid path).
+    """
+    csv_path = config.DATA_DIR / "hotel-datasets" / f"hotel{hotel_num}.csv"
+    if not csv_path.is_file():
+        raise FileNotFoundError(f"Hotel dataset not found: {csv_path}")
+    df = pd.read_csv(csv_path)
+    for col in ("text", "date", "class"):
+        if col not in df.columns:
+            raise ValueError(
+                f"{csv_path.name} missing required column {col!r}; got {list(df.columns)}"
+            )
+    df = df[["text", "date", "class"]].copy()
+    df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+    df["label"] = df["class"].astype(int)
+    df = df.drop(columns=["class"])
+    df = df.dropna(subset=["date", "text"])
+    df["text"] = df["text"].astype(str)
+    df.loc[df["label"] == 0, "label"] = -1
+    df = df[df["label"].isin([-1, 1])]
+
+    month_period = df["date"].dt.to_period("M")
+    uniq_months = sorted(month_period.dropna().unique())
+    if not uniq_months:
+        raise ValueError(f"No valid dates in {csv_path}")
+    month_to_i = {m: i for i, m in enumerate(uniq_months)}
+    df["_wi"] = month_period.map(month_to_i)
+    df = df.dropna(subset=["_wi"])
+    df["_wi"] = df["_wi"].astype(int)
+
+    data_dict = {}
+    neg_prevs = []
+    pos_prevs = []
+    for i in range(len(uniq_months)):
+        chunk = df[df["_wi"] == i].drop(columns=["_wi"]).reset_index(drop=True)
+        data_dict[i] = chunk
+        n = len(chunk)
+        if n == 0:
+            neg_prevs.append(0.0)
+            pos_prevs.append(0.0)
+            continue
+        neg_prevs.append((chunk["label"] == -1).sum() / n)
+        pos_prevs.append((chunk["label"] == 1).sum() / n)
+
+    prevalence_df = pd.DataFrame({-1: neg_prevs, 1: pos_prevs})
+    return data_dict, prevalence_df, [-1, 1], DEFAULT_STRIDE_RATIO
+
+
 def Apple_Twitter_Sentiment_DFE():
     apple_path = config.DATA_DIR / "Apple-Twitter-Sentiment-DFE.csv"
     with open(apple_path, "rb") as f:
@@ -379,6 +433,14 @@ def loading(dataname):
 
     elif dataname == 'global_covid19_tweets':
         return global_covid19_tweets()
+
+    elif isinstance(dataname, str) and dataname.startswith("hotel"):
+        suffix = dataname.replace("hotel", "", 1)
+        if not suffix.isdigit():
+            raise ValueError(
+                f"Unknown dataset {dataname!r}. Use hotel1 .. hotel9 (files under hotel-datasets/)."
+            )
+        return hotel_dataset(int(suffix))
 
     elif dataname == 'Apple-Twitter-Sentiment-DFE':
         return Apple_Twitter_Sentiment_DFE()
