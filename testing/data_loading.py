@@ -7,11 +7,6 @@ import urllib.request
 from utils import val_test_split
 import config
 
-# DyS-Opt expects a stride in [0, 1] (width of the alpha search). The 4th value returned
-# by the loader must be this ratio, not the median chunk size.
-DEFAULT_STRIDE_RATIO = 0.05
-
-
 def nepali_dataset_eng():
     df1 = pd.read_csv(config.DATA_DIR / "Nepali_dataset_Eng.csv")
     df1 = df1.drop(labels=['Unnamed: 0', 'Tweet', 'Tokanize_tweet'], axis=1)
@@ -42,7 +37,7 @@ def nepali_dataset_eng():
 
     prevalence_df = pd.DataFrame({-1: neg_prevs, 0: neu_prevs, 1: pos_prevs})
 
-    return data_dict, prevalence_df, [-1, 0, 1], DEFAULT_STRIDE_RATIO
+    return data_dict, prevalence_df, [-1, 0, 1]
 
 
 def global_covid19_tweets():
@@ -97,7 +92,7 @@ def global_covid19_tweets():
 
     prevalence_df = pd.DataFrame({-1: neg_prevs, 0: neu_prevs, 1: pos_prevs})
 
-    return data_dict, prevalence_df, [-1, 0, 1], DEFAULT_STRIDE_RATIO
+    return data_dict, prevalence_df, [-1, 0, 1]
 
 
 def hotel_dataset(hotel_num: int):
@@ -151,7 +146,7 @@ def hotel_dataset(hotel_num: int):
         pos_prevs.append((chunk["label"] == 1).sum() / n)
 
     prevalence_df = pd.DataFrame({-1: neg_prevs, 1: pos_prevs})
-    return data_dict, prevalence_df, [-1, 1], DEFAULT_STRIDE_RATIO
+    return data_dict, prevalence_df, [-1, 1]
 
 
 def Apple_Twitter_Sentiment_DFE():
@@ -218,7 +213,7 @@ def Apple_Twitter_Sentiment_DFE():
     '''
     prevalence_df = pd.DataFrame({-1: neg_prevs, 0: neu_prevs, 1: pos_prevs})
 
-    return data_dict, prevalence_df, [-1, 0, 1], DEFAULT_STRIDE_RATIO
+    return data_dict, prevalence_df, [-1, 0, 1]
 
 
 def bike():
@@ -273,7 +268,7 @@ def bike():
     training_data, ts_data_dict, ts_prevalence = val_test_split(data_dict.copy(), prevalence_df, training_size)
     training_data = training_data.sample(frac=1.0, replace=False, random_state=42).reset_index(drop=True)
 
-    return training_data, ts_data_dict, ts_prevalence, [0, 1], DEFAULT_STRIDE_RATIO
+    return training_data, ts_data_dict, ts_prevalence, [0, 1]
 
 
 def energy():
@@ -325,7 +320,7 @@ def energy():
     training_data, ts_data_dict, ts_prevalence = val_test_split(data_dict.copy(), prevalence_df, training_size)
     training_data = training_data.sample(frac=1.0, replace=False, random_state=42).reset_index(drop=True)
 
-    return training_data, ts_data_dict, ts_prevalence, [-1, 0, 1], DEFAULT_STRIDE_RATIO
+    return training_data, ts_data_dict, ts_prevalence, [-1, 0, 1]
 
 
 def news():
@@ -423,7 +418,7 @@ def news():
     training_data, ts_data_dict, ts_prevalence = val_test_split(data_dict.copy(), prevalence_df, training_size)
     training_data = training_data.sample(frac=1.0, replace=False, random_state=42).reset_index(drop=True)
 
-    return training_data, ts_data_dict, ts_prevalence, [0, 1], DEFAULT_STRIDE_RATIO
+    return training_data, ts_data_dict, ts_prevalence, [0, 1]
 
 
 def loading(dataname):
