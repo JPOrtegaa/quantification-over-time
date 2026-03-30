@@ -168,24 +168,34 @@ def bike():
     dta["cnt"] = dta["cnt"].astype("int64")
     dta = dta.rename(columns={"cnt": "label"})
 
-    # dataset is already chronologically ordered in hour.csv, but we sort by dteday just in case 
-    dta["dteday"] = pd.to_datetime(dta["dteday"])
-    dta = dta.sort_values(by="dteday").reset_index(drop=True)
+    num = dta["dteday"].value_counts()
+    dates = num.sort_index().index.values.tolist()
 
-    # We need to drop dteday since it can't be used as a numerical feature directly
-    dta = dta.drop(["dteday"], axis=1)
+    x = 2
+    df_date_index = dta.copy()
+    for i, date in enumerate(dates):
+        df_date_index.loc[df_date_index["dteday"] == date, "dteday"] = i // x
 
-    classes = [0, 1]
-    ts_chunks, prevalence_df, stride_ratio = sliding_window_split(dta, classes)
+    _ = df_date_index["dteday"].value_counts().sort_index()
+    timestamps = _.index.values.tolist()
+    amounts = np.array(_.values.tolist())
 
-    training_data, ts_data_dict, ts_prevalence = val_test_split(
-        ts_chunks.copy(), prevalence_df, training_size
-    )
-    training_data = training_data.sample(
-        frac=1.0, replace=False, random_state=42
-    ).reset_index(drop=True)
+    data_dict = {}
+    pos_nums = []
+    for i, t in enumerate(timestamps):
+        data_dict[i] = df_date_index[df_date_index["dteday"] == t].copy()
+        del data_dict[i]["dteday"]
 
-    return training_data, ts_data_dict, ts_prevalence, classes, stride_ratio
+        pos_num = df_date_index[(df_date_index["dteday"] == t) & (df_date_index["label"] == 1)]["dteday"].count()
+        pos_nums.append(pos_num)
+    pos_nums = np.array(pos_nums)
+    pos_prevs = pos_nums / amounts
+
+    prevalence_df = pd.DataFrame({0: 1 - pos_prevs, 1: pos_prevs})
+    training_data, ts_data_dict, ts_prevalence = val_test_split(data_dict.copy(), prevalence_df, training_size)
+    training_data = training_data.sample(frac=1.0, replace=False, random_state=42).reset_index(drop=True)
+
+    return training_data, ts_data_dict, ts_prevalence, [0, 1], None
 
 
 def energy():

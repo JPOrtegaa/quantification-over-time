@@ -32,16 +32,16 @@ tubular_data = [("bike", 55)]
 # TSA_methods = ['QFY', 'MA', 'KFMA']
 # unified_window = 4
 
-classifiers_set1 = ["RF"]
+classifiers_set1 = ["LR", "RF"]
 classifiers_set2 = ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"]
-qua_methods = ["DyS", "DyS-Opt"]
-TSA_methods = ["QFY", "MA", "KFMA"]
+qua_methods = ["DyS", "ACC"] # "DyS-Opt"
+TSA_methods = ["QFY"]
 unified_window = 4
 
 
 def experiment(dataset, classifier, quantifier, tsa, random_state):
 
-    # print(f"-----{dataset[0]}-{classifier}-{quantifier}-{tsa}-{random_state}-----")
+    print(f"-----{dataset[0]}-{classifier}-{quantifier}-{tsa}-{random_state}-----")
 
     if dataset in tubular_data:
         training_set, ts_chunks, ts_prevalence, c, ts_info = data_loading.loading(
@@ -90,7 +90,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
     val_MAE, val_MSE, sep_mae, val_pred_dists = qfy.getMAE_val_set(
         val_set, quantifier, classifier, c, ts_chunks, dataset, ts_info, random_seed=random_state
     )
-    # print("MAE on val samples:", round(val_MAE, 4))
+    print("MAE on val samples:", round(val_MAE, 4))
 
     """
     -------------------------------quantifying test sets-------------------------------
@@ -101,7 +101,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
     Qua_MAE = utils.mae(test_dsts, quantified_dsts)
 
     if tsa == "QFY":
-        # print(f"***{quantifier} MAE***:", round(Qua_MAE, 4))
+        print(f"***{quantifier} MAE***:", round(Qua_MAE, 4))
         return Qua_MAE
 
     else:
@@ -137,7 +137,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state):
         modified_dsts = modified_dsts / (np.sum(modified_dsts, axis=1).reshape(-1, 1))
 
         Combi_MAE = utils.mae(test_dsts, modified_dsts)
-        # print(f"***{quantifier}+{tsa} MAE***:", round(Combi_MAE, 4))
+        print(f"***{quantifier}+{tsa} MAE***:", round(Combi_MAE, 4))
         return Combi_MAE
 
 
@@ -150,21 +150,16 @@ def qot(data_format):
         clsfiers = classifiers_set2
 
     seed_tables = []
-    total_steps = len(seeds) * len(dataset_set) * len(qua_methods) * len(clsfiers)
-    pbar = tqdm(total=total_steps, desc=f"Experiment ({data_format})")
-    
     for seed in seeds:
         idx = 0
-        outputfile = pd.DataFrame(
-            {
-                "Dataset": [],
-                "QuaMethod": [],
-                "Classifier": [],
-                "QFY": [],
-                "MA": [],
-                "KFMA": [],
-            }
-        )
+        outputfile_structure = {
+            "Dataset": [],
+            "QuaMethod": [],
+            "Classifier": [],
+        }
+        for TSA_method in TSA_methods:
+            outputfile_structure[TSA_method] = []
+        outputfile = pd.DataFrame(outputfile_structure)
 
         for data_name in dataset_set:
             for qua in qua_methods:
@@ -175,25 +170,21 @@ def qot(data_format):
                         output.append(res)
                     outputfile.loc[idx] = output
                     idx = idx + 1
-                    pbar.update(1)
 
         seed_tables.append(outputfile)
-    pbar.close()
 
-    num_rows = len(seed_tables[0])
-    num_methods = len(TSA_methods)
-    tot = np.zeros((num_rows, num_methods))
+    tot = np.zeros((len(seed_tables), len(TSA_methods)))
     for i in range(len(seeds)):
-        res = seed_tables[i].to_numpy()[:, 3 : 3 + num_methods]
+        res = seed_tables[i].to_numpy()[:, 3 : 3 + len(TSA_methods)]
         tot = tot + res
     tot = tot / len(seeds)
 
-    tot_res = seed_tables[0].iloc[:, :3].copy()
+    tot_res = seed_tables[1].iloc[:, :3]
     for i, m in enumerate(TSA_methods):
         tot_res[m] = tot[:, i]
 
     # Save quanti_results of one random case in to a table
-    TSF_results = tot_res.iloc[:, 3 : 3 + num_methods]
+    TSF_results = tot_res.iloc[:, 3 : 3 + len(TSA_methods)]
     best_m = []
     for i in range(len(TSF_results)):
         mini = 1
