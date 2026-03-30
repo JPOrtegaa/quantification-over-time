@@ -61,6 +61,24 @@ REGRESSOR_LOG_PATH = config.PROJECT_ROOT / "regressor" / "toms_regressor_log.txt
 
 _LOG_PREFIX = "[run_experiment]"
 
+def textual_time_column(dataset_name: str) -> str:
+    """Timestamp column in chunk DataFrames for regressors, classifier tables, and CM."""
+    if dataset_name in SENTIMENT_TIMESTAMP_COLS:
+        return SENTIMENT_TIMESTAMP_COLS[dataset_name]
+    if isinstance(dataset_name, str) and dataset_name.startswith("hotel_neutral_"):
+        return "date"
+    return "TweetAt"
+
+
+def hotel_neutral_dataset_tuples():
+    """(dataset_name, val_length) for each hotel*.csv under hotel-datasets-neutral."""
+    d = config.DATA_DIR / "hotel-datasets-neutral"
+    if not d.is_dir():
+        return []
+    return [
+        (f"hotel_neutral_{path.stem}", VAL_LENGTH)
+        for path in sorted(d.glob("hotel*.csv"))
+    ]
 
 def _log(msg: str) -> None:
     print(f"{_LOG_PREFIX} {msg}", flush=True)
@@ -249,13 +267,27 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
         ts_chunks, ts_prevalence, dataset[1], MAX_TEST_CHUNKS
     )
 
+    time_col = textual_time_column(dataset[0])
+
     # --- Per-chunk confusion matrices (before val/test split) ---
     ts_col = SENTIMENT_TIMESTAMP_COLS.get(dataset[0])
+    if ts_col is None and str(dataset[0]).startswith("hotel_neutral_"):
+        ts_col = "date"
     if ts_col is not None:
         cm_df = qfy.compute_chunk_confusion_matrices(
             ts_chunks, classifier, c, timestamp_col=ts_col
         )
-        cm_path = config.OUTPUT_DIR / f"confusion_matrices_{dataset[0]}.csv"
+        if str(dataset[0]).startswith("hotel_neutral_"):
+            cm_path = config.OUTPUT_DIR / f"confusion_matrices_{dataset[0]}_monthly.csv"
+            cm_df = cm_df.copy()
+            cm_df["timestamp"] = pd.to_datetime(
+                cm_df["timestamp"], utc=True, errors="coerce"
+            ).dt.strftime("%Y-%m")
+            _log(
+                "Hotel neutral: UTC calendar-month chunks; confusion matrix `timestamp` column is YYYY-MM."
+            )
+        else:
+            cm_path = config.OUTPUT_DIR / f"confusion_matrices_{dataset[0]}.csv"
         cm_df.to_csv(cm_path, index=False)
         _log(f"Confusion matrices saved to {cm_path}")
 
@@ -263,7 +295,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
         compute_initial_window_and_split(dataset, ts_chunks, ts_prevalence)
     )
 
-    window_t = scalar_time_per_window(ts_chunks, REGRESSOR_TIME_COLUMN)
+    window_t = scalar_time_per_window(ts_chunks, time_col)
     val_set = attach_window_ids(val_set, ts_chunks, dataset[1])
 
     clf_slug = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(classifier))[:80]
@@ -279,7 +311,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
             classifier,
             val_length=dataset[1],
             out_path=clf_out,
-            time_column=REGRESSOR_TIME_COLUMN,
+            time_column=time_col,
         )
     finally:
         Classifying.HF_PHASE_HINT = None
@@ -288,7 +320,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
     regressor = None
     time_column = None
     if exp_type == "TOMS":
-        time_column = REGRESSOR_TIME_COLUMN
+        time_column = time_col
         ts_run = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         REGRESSOR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(REGRESSOR_LOG_PATH, "a", encoding="utf-8") as lf:
@@ -306,7 +338,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
         )
         Classifying.HF_PHASE_HINT = "TOMS train: val Y (HF)"
         try:
-            span = qfy.date_span_label(val_set, REGRESSOR_TIME_COLUMN)
+            span = qfy.date_span_label(val_set, time_col)
             if span:
                 try:
                     val_set.attrs["hf_log"] = span
@@ -378,7 +410,7 @@ def experiment(dataset, classifier, quantifier, tsa, random_state, exp_type):
             test_sets,
             classifier,
             c,
-            REGRESSOR_TIME_COLUMN,
+            time_col,
             dataset[1],
             REGRESSOR_LOG_PATH,
         )
@@ -536,11 +568,106 @@ def run_textual_experiments(quick: bool = False):
     _log(f"Results saved to {out_path}.")
 
 
+def run_hotel_neutral_experiments(quick: bool = False):
+    """Quantification grid on every CSV under hotel-datasets-neutral (same HF model, VAL_LENGTH, unified_window)."""
+    hotel_datasets = hotel_neutral_dataset_tuples()
+    if not hotel_datasets:
+        _log(
+            "No hotel neutral datasets found "
+            f"(expected {config.DATA_DIR / 'hotel-datasets-neutral'} with hotel*.csv). Skipping."
+        )
+        return
+
+    run_seeds = [1] if quick else seeds
+    run_qua = ["DyS"] if quick else qua_methods
+    run_tsa = ["QFY"] if quick else TSA_methods
+    run_exp = EXP_TYPES
+
+    per_exp_steps = sum(len(run_tsa) if e == "original" else 1 for e in run_exp)
+    total_steps = (
+        len(run_seeds)
+        * len(hotel_datasets)
+        * len(run_qua)
+        * len(CLASSIFIERS)
+        * per_exp_steps
+    )
+    _log(
+        f"Starting hotel neutral grid: {len(hotel_datasets)} dataset(s), "
+        f"seeds={run_seeds}, EXP_TYPES={run_exp}, qua_methods={run_qua}, "
+        f"TSA_methods={run_tsa}; total_steps={total_steps}."
+    )
+
+    seed_tables = []
+    pbar = tqdm(total=total_steps, desc="Experiment (hotel neutral)")
+    columns = (
+        "Dataset",
+        "ExpType",
+        "QuaMethod",
+        "Classifier",
+        "QFY",
+        "MA",
+        "KFMA",
+    )
+
+    for seed in run_seeds:
+        _log(f"--- Hotel neutral: seed={seed} ---")
+        idx = 0
+        outputfile = pd.DataFrame({col: [] for col in columns})
+        for ds in hotel_datasets:
+            for exp_type in run_exp:
+                for qua in run_qua:
+                    for clf in CLASSIFIERS:
+                        row = {
+                            "Dataset": ds[0],
+                            "ExpType": exp_type,
+                            "QuaMethod": qua,
+                            "Classifier": clf,
+                            "QFY": np.nan,
+                            "MA": np.nan,
+                            "KFMA": np.nan,
+                        }
+                        if exp_type == "original":
+                            for tsa in run_tsa:
+                                row[tsa] = experiment(
+                                    ds, clf, qua, tsa, seed, exp_type
+                                )
+                                pbar.update(1)
+                        else:
+                            row["QFY"] = experiment(
+                                ds, clf, qua, "QFY", seed, exp_type
+                            )
+                            pbar.update(1)
+                        outputfile.loc[idx] = row
+                        idx += 1
+
+        seed_tables.append(outputfile)
+        _log(f"Seed {seed}: {len(outputfile)} row(s).")
+    pbar.close()
+
+    metric_cols = ["QFY", "MA", "KFMA"]
+    tot = aggregate_mean_over_seeds(seed_tables, metric_cols)
+    tot_res = seed_tables[0][["Dataset", "ExpType", "QuaMethod", "Classifier"]].copy()
+    for i, m in enumerate(metric_cols):
+        tot_res[m] = tot[:, i]
+
+    TSF = tot_res[metric_cols]
+    best_m = annotate_best_method(TSF, run_tsa if quick else TSA_methods)
+    tot_res["best_method"] = best_m
+    out_name = (
+        "MAE_quanti_results_mean_hotel_neutral_quick.csv"
+        if quick
+        else "MAE_quanti_results_mean_hotel_neutral.csv"
+    )
+    out_path = config.OUTPUT_DIR / out_name
+    tot_res.to_csv(out_path)
+    _log(f"Hotel neutral results saved to {out_path}.")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--run",
-        choices=["global_textual", "tabular_cm"],
+        choices=["global_textual", "tabular_cm", "hotel_neutral"],
         default="global_textual",
         help=(
             "global_textual: sentiment quantification experiment; "
@@ -559,6 +686,8 @@ if __name__ == "__main__":
     _log(f"__main__: args.run={args.run!r}, quick={args.quick}")
     if args.run == "tabular_cm":
         run_tabular_confusion_matrices()
+    elif args.run == "hotel_neutral":
+        run_hotel_neutral_experiments(quick=args.quick)
     else:
         run_textual_experiments(quick=args.quick)
     _log("Main run finished.")

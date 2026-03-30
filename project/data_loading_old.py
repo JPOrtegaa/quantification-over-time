@@ -4,6 +4,7 @@ import chardet
 from io import BytesIO
 from zipfile import ZipFile
 import urllib.request
+import config
 from utils import val_test_split
 
 
@@ -154,6 +155,64 @@ def Apple_Twitter_Sentiment_DFE():
     '''
     collect prevalence of all labels
     '''
+    prevalence_df = pd.DataFrame({-1: neg_prevs, 0: neu_prevs, 1: pos_prevs})
+
+    return data_dict, prevalence_df, [-1, 0, 1], count_median(data_dict)
+
+
+def preprocess_hotel_neutral_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Hotel neutral pipeline: drop numeric review score only (text/date/class unchanged)."""
+    return df.drop(columns=["rating"], errors="ignore")
+
+
+def hotel_neutral_timeseries(csv_stem: str):
+    """
+    Load one file from ``hotel-datasets-neutral`` (e.g. stem ``hotel1`` -> hotel1.csv).
+    Preprocess drops ``rating``; ``class`` is renamed to ``label``; chunks follow
+    **UTC calendar months** (one chunk per month), same prevalence structure as other
+    textual series. Within each chunk, ``date`` is set to the first day of that month
+    (UTC) for a consistent timestamp in downstream confusion matrices.
+    """
+    path = config.DATA_DIR / "hotel-datasets-neutral" / f"{csv_stem}.csv"
+    if not path.is_file():
+        raise FileNotFoundError(f"Hotel neutral CSV not found: {path}")
+    df = pd.read_csv(path)
+    df = preprocess_hotel_neutral_df(df)
+    if "class" not in df.columns:
+        raise ValueError(f"{path.name}: expected column 'class' after preprocess")
+    df = df.rename(columns={"class": "label"})
+    df["label"] = pd.to_numeric(df["label"], errors="coerce")
+    df = df[df["label"].isin([-1, 0, 1])]
+    df["label"] = df["label"].astype(int)
+    df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
+    df = df.dropna(subset=["date", "label"])
+    df["_month"] = df["date"].dt.to_period("M")
+    df = df.sort_values("_month").reset_index(drop=True)
+
+    months = sorted(df["_month"].unique())
+    nums0 = np.array(
+        [len(df[df["_month"] == m]) for m in months],
+        dtype=np.float64,
+    )
+
+    data_dict = {}
+    pos_nums = []
+    for i, m in enumerate(months):
+        sub = df[df["_month"] == m].copy()
+        sub = sub.drop(columns=["_month"])
+        month_start = pd.Timestamp(year=m.year, month=m.month, day=1, tz="UTC")
+        sub["date"] = month_start
+        data_dict[i] = sub
+        pos_nums.append(int((sub["label"] == 1).sum()))
+    pos_prevs = np.array(pos_nums, dtype=np.float64) / nums0
+
+    neg_nums = []
+    for i, m in enumerate(months):
+        sub = df[df["_month"] == m]
+        neg_nums.append(int((sub["label"] == -1).sum()))
+    neg_prevs = np.array(neg_nums, dtype=np.float64) / nums0
+
+    neu_prevs = 1.0 - (pos_prevs + neg_prevs)
     prevalence_df = pd.DataFrame({-1: neg_prevs, 0: neu_prevs, 1: pos_prevs})
 
     return data_dict, prevalence_df, [-1, 0, 1], count_median(data_dict)
@@ -383,3 +442,7 @@ def loading(dataname):
 
     elif dataname == 'news':
         return news()
+
+    elif isinstance(dataname, str) and dataname.startswith('hotel_neutral_'):
+        stem = dataname.removeprefix('hotel_neutral_')
+        return hotel_neutral_timeseries(stem)

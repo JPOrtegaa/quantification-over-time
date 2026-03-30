@@ -1,0 +1,10 @@
+,Dataset,ExpType,QuaMethod,Classifier,QFY,MA,KFMA,best_method
+0,hotel_neutral_hotel1,original,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.13107642893271007,,,QFY
+1,hotel_neutral_hotel2,original,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.043830184136364324,,,QFY
+2,hotel_neutral_hotel3,original,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.16709075574233348,,,QFY
+3,hotel_neutral_hotel4,original,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.13990668164130582,,,QFY
+4,hotel_neutral_hotel5,original,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.1790011273529597,,,QFY
+5,hotel_neutral_hotel6,original,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.0801449564010315,,,QFY
+6,hotel_neutral_hotel7,original,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.12030650295464367,,,QFY
+7,hotel_neutral_hotel8,original,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.20212439293661458,,,QFY
+8,hotel_neutral_hotel9,original,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.07579219247694895,,,QFY

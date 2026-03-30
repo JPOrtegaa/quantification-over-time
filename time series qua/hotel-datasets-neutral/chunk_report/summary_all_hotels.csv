@@ -1,0 +1,10 @@
+hotel,n_reviews,n_daily_chunks,n_weekly_chunks,n_monthly_chunks,median_daily_chunk_size,median_weekly_chunk_size,median_monthly_chunk_size
+hotel1,2529,753,117,27,3.0,19.0,84.0
+hotel2,5193,794,117,27,5.0,35.0,150.0
+hotel3,1196,587,117,27,2.0,10.0,43.0
+hotel4,1269,626,116,27,2.0,10.0,47.0
+hotel5,1282,569,116,27,2.0,9.0,38.0
+hotel6,3577,781,117,27,4.0,30.0,151.0
+hotel7,2267,735,117,27,3.0,17.0,70.0
+hotel8,2005,707,117,27,3.0,16.0,68.0
+hotel9,2810,754,117,27,3.0,23.0,97.0
