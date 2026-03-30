@@ -15,6 +15,7 @@ DATA_DIR = PROJECT_ROOT.parent / "time series qua"
 OUTPUT_DIR = PROJECT_ROOT / "output_files"
 OUTPUT_REGRESSOR_DIR = OUTPUT_DIR / "regressor"
 OUTPUT_CLASSIFICATION_DIR = OUTPUT_DIR / "classification"
+OUTPUT_QUANTIFICATION_DIR = OUTPUT_DIR / "quantification"
 QUANT_RESULTS_DIR = OUTPUT_DIR / "results"
 PLOTS_DIR = OUTPUT_DIR / "plots"
 # R / ReadMe2 pipeline artefacts (val/test preds for quantifier "ReadMe2", etc.)
@@ -38,6 +39,7 @@ def ensure_dirs():
         OUTPUT_DIR,
         OUTPUT_REGRESSOR_DIR,
         OUTPUT_CLASSIFICATION_DIR,
+        OUTPUT_QUANTIFICATION_DIR,
         QUANT_RESULTS_DIR,
         PLOTS_DIR,
     ]:

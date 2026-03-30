@@ -1,15 +1,16 @@
 """
 Streamlit dashboard: TOMS regressor matrix M(t) over windows from CSV exports.
 
+Tabs: (1) matrix M with regressor selection and optional classifier scores;
+(2) true prevalence vs quantifier.
+
 Run from the project folder:
   streamlit run output_files/plots/regressor_matrix_dashboard.py
-
-Optional:
-  streamlit run output_files/plots/regressor_matrix_dashboard.py --server.headless true
 """
 
 from __future__ import annotations
 
+import colorsys
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -19,21 +20,167 @@ import pandas as pd
 
 try:
     import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-except ImportError as e:  # pragma: no cover
+except ImportError as e:
     raise SystemExit(
         "Install plotly: pip install plotly streamlit"
     ) from e
 
 try:
     import streamlit as st
-except ImportError as e:  # pragma: no cover
+except ImportError as e:
     raise SystemExit("Install streamlit: pip install streamlit") from e
 
 
 PLOTS_DIR = Path(__file__).resolve().parent
 OUTPUT_FILES = PLOTS_DIR.parent
 REGRESSOR_DIR = OUTPUT_FILES / "regressor"
+CLASSIFICATION_DIR = OUTPUT_FILES / "classification"
+QUANTIFICATION_DIR = OUTPUT_FILES / "quantification"
+
+# Cores base por índice na ordenação de rótulos; paletas específicas para [0,1] e [-1,0,1].
+# Classificador: tom mais escuro na mesma família; M_r{i}_c{j}: tons conforme o regressor i.
+CLASS_BASE_HEX_DEFAULT = (
+    "#e67e22",
+    "#27ae60",
+    "#8e44ad",
+    "#2980b9",
+    "#c0392b",
+)
+
+
+def _hex_to_rgb01(h: str) -> Tuple[float, float, float]:
+    h = h.strip().lstrip("#")
+    return tuple(int(h[i : i + 2], 16) / 255.0 for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def _rgb01_to_hex(r: float, g: float, b: float) -> str:
+    return "#{:02x}{:02x}{:02x}".format(
+        max(0, min(255, int(r * 255))),
+        max(0, min(255, int(g * 255))),
+        max(0, min(255, int(b * 255))),
+    )
+
+
+def _label_tuple_signature(class_labels: List) -> Tuple:
+    return tuple(_sorted_labels(class_labels))
+
+
+def palette_for_class_labels(class_labels: List) -> Tuple[str, ...]:
+    """Mesma ordem que _sorted_labels / semantic_color_index."""
+    sig = _label_tuple_signature(class_labels)
+    try:
+        sig_int = tuple(int(x) for x in sig)
+    except (TypeError, ValueError):
+        sig_int = None
+    if sig_int == (0, 1):
+        return ("#27ae60", "#e67e22")
+    if sig_int == (-1, 0, 1):
+        return ("#e67e22", "#27ae60", "#8e44ad")
+    n = len(sig)
+    if n <= len(CLASS_BASE_HEX_DEFAULT):
+        return CLASS_BASE_HEX_DEFAULT[:n]
+    return tuple(
+        CLASS_BASE_HEX_DEFAULT[i % len(CLASS_BASE_HEX_DEFAULT)] for i in range(n)
+    )
+
+
+def _sorted_labels(class_labels: List) -> List:
+    """Ordem estável para associar cada rótulo a um índice de cor."""
+
+    def _key(x):
+        if isinstance(x, bool):
+            return (0, int(x))
+        if isinstance(x, int):
+            return (1, x)
+        if isinstance(x, float):
+            return (2, x)
+        return (3, str(x))
+
+    try:
+        return sorted(class_labels, key=_key)
+    except Exception:
+        return sorted(class_labels, key=str)
+
+
+def semantic_color_index(lab, class_labels: List) -> int:
+    order = _sorted_labels(class_labels)
+    try:
+        return order.index(lab)
+    except ValueError:
+        return 0
+
+
+def base_hex_for_semantic_label(lab, class_labels: List) -> str:
+    pal = palette_for_class_labels(class_labels)
+    k = semantic_color_index(lab, class_labels)
+    return pal[k % len(pal)]
+
+
+def matrix_row_shade(base_hex: str, row_i: int, n_rows: int) -> str:
+    """Tons da mesma matiz: clareia/escurece conforme o regressor (linha i)."""
+    r, g, b = _hex_to_rgb01(base_hex)
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    if n_rows <= 1:
+        l_new = max(0.22, min(0.72, l))
+    else:
+        t = row_i / (n_rows - 1)
+        # i=0 mais escuro → i maior mais claro (ou o inverso); mantém contraste entre linhas
+        l_new = 0.28 + t * 0.42
+    s = min(0.95, max(0.45, s))
+    r2, g2, b2 = colorsys.hls_to_rgb(h, l_new, s)
+    return _rgb01_to_hex(r2, g2, b2)
+
+
+def classifier_shade_for_class_j(base_hex: str) -> str:
+    """Traço do classificador: mesma família, traço bem visível (um pouco mais escuro/saturado)."""
+    r, g, b = _hex_to_rgb01(base_hex)
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    l = max(0.2, min(0.55, l * 0.82))
+    s = min(1.0, s * 1.08)
+    r2, g2, b2 = colorsys.hls_to_rgb(h, l, s)
+    return _rgb01_to_hex(r2, g2, b2)
+
+
+def blend_hex(a: str, b: str, t: float) -> str:
+    """t=0 → a, t=1 → b."""
+    ar, ag, ab = _hex_to_rgb01(a)
+    br, bg, bb = _hex_to_rgb01(b)
+    u = 1.0 - t
+    return _rgb01_to_hex(
+        ar * u + br * t, ag * u + bg * t, ab * u + bb * t
+    )
+
+
+def matrix_j_for_score_column(col: str, class_labels: List) -> Optional[int]:
+    short = col.replace("score_", "", 1)
+    for j, lab in enumerate(class_labels):
+        if str(lab) == short:
+            return j
+    return None
+
+
+def matrix_j_for_prev_suffix(suf: str, class_labels: List) -> Optional[int]:
+    for j, lab in enumerate(class_labels):
+        if str(lab) == suf:
+            return j
+    return None
+
+
+def _classifier_score_columns(df: pd.DataFrame) -> List[str]:
+    """
+    Classifier probability columns per class: ``score_<class>``.
+    Excludes ``score_mean_*`` (row-mean of M in the regressor CSV).
+    """
+    out: List[str] = []
+    for c in df.columns:
+        s = str(c)
+        if not s.startswith("score_"):
+            continue
+        if s.startswith("score_mean"):
+            continue
+        out.append(c)
+    return sorted(out, key=str)
+
 
 KNOWN_QUANTIFIERS = (
     "DyS-Opt",
@@ -47,23 +194,17 @@ KNOWN_QUANTIFIERS = (
 
 
 def parse_regressor_csv_path(path: Path) -> Dict[str, str]:
-    """
-    Parse experiment metadata from filename:
-    regressor_window_scores_{dataset}_{quantifier}_seed{n}_{classifier_slug}.csv
-    """
     stem = path.stem
     out: Dict[str, str] = {"filename": path.name, "stem": stem}
     prefix = "regressor_window_scores_"
     if not stem.startswith(prefix):
         out["note"] = "Unrecognized prefix (expected regressor_window_scores_*)"
         return out
-
     rest = stem[len(prefix) :]
     m = re.match(r"(.+)_seed(\d+)_(.+)$", rest)
     if not m:
         out["note"] = "Could not parse seed_*_classifier tail"
         return out
-
     body, seed, clf_slug = m.group(1), m.group(2), m.group(3)
     dataset = ""
     quantifier = ""
@@ -79,7 +220,6 @@ def parse_regressor_csv_path(path: Path) -> Dict[str, str]:
             dataset, quantifier = body[:idx], body[idx + 1 :]
         else:
             dataset, quantifier = body, "?"
-
     out.update(
         {
             "dataset": dataset,
@@ -91,8 +231,28 @@ def parse_regressor_csv_path(path: Path) -> Dict[str, str]:
     return out
 
 
+def classifier_short_label(meta: Dict[str, str]) -> str:
+    slug = (meta.get("classifier_slug") or "").strip()
+    return slug if slug else "clf"
+
+
+def infer_class_labels(K: int) -> List:
+    """
+    Class label per regressor index (row i of M); aligned with energy loader [-1,0,1].
+    If K≠3, uses 0..K-1.
+    """
+    if K == 3:
+        return [-1, 0, 1]
+    if K == 2:
+        return [0, 1]
+    return list(range(K))
+
+
+def regressor_row_label(i: int, class_for_row) -> str:
+    return f"Regressor {i} (trained only on y = {class_for_row})"
+
+
 def discover_matrix_shape(df: pd.DataFrame) -> Tuple[int, int, List[Tuple[int, int]]]:
-    """Infer K from columns M_r{i}_c{j}."""
     pat = re.compile(r"^M_r(\d+)_c(\d+)$")
     cells: List[Tuple[int, int]] = []
     for c in df.columns:
@@ -107,18 +267,270 @@ def discover_matrix_shape(df: pd.DataFrame) -> Tuple[int, int, List[Tuple[int, i
     return K, K, cells
 
 
-def build_matrix_row(df: pd.DataFrame, row_idx: int, K: int) -> np.ndarray:
-    M = np.zeros((K, K), dtype=np.float64)
-    for i in range(K):
-        for j in range(K):
-            col = f"M_r{i}_c{j}"
-            if col in df.columns:
-                M[i, j] = float(df.iloc[row_idx][col])
-    return M
-
-
 def load_csv(path: Path) -> pd.DataFrame:
     return pd.read_csv(path)
+
+
+def find_regressor_root_csvs(pattern: str = "regressor_window_scores_*.csv") -> List[Path]:
+    if not REGRESSOR_DIR.is_dir():
+        return []
+    return sorted(REGRESSOR_DIR.glob(pattern))
+
+
+def classifier_csv_for_regressor(reg_path: Path) -> Path:
+    name = reg_path.name
+    if not name.startswith("regressor_window_scores_"):
+        return CLASSIFICATION_DIR / name
+    return CLASSIFICATION_DIR / ("classifier_window_scores_" + name[len("regressor_window_scores_") :])
+
+
+def quant_prev_csv_path(meta: Dict[str, str]) -> Path:
+    ds = meta["dataset"]
+    q = meta["quantifier"]
+    seed = meta["seed"]
+    clf = meta["classifier_slug"]
+    return QUANTIFICATION_DIR / f"quant_prev_{ds}_{q}_seed{seed}_{clf}.csv"
+
+
+def find_true_prevalence_csvs(dataset: str) -> List[Path]:
+    if not QUANTIFICATION_DIR.is_dir():
+        return []
+    return sorted(QUANTIFICATION_DIR.glob(f"true_window_prevalence_{dataset}_v*.csv"))
+
+
+def load_classifier_scores_aligned(
+    reg_df: pd.DataFrame, reg_path: Path
+) -> Tuple[Optional[pd.DataFrame], Optional[Path]]:
+    if "window_index" not in reg_df.columns:
+        return None, classifier_csv_for_regressor(reg_path)
+    clf_path = classifier_csv_for_regressor(reg_path)
+    if not clf_path.is_file():
+        return None, clf_path
+    try:
+        clf = pd.read_csv(clf_path)
+    except Exception:
+        return None, clf_path
+    if "window_index" not in clf.columns:
+        return None, clf_path
+    score_cols = _classifier_score_columns(clf)
+    if not score_cols:
+        return None, clf_path
+    merged = reg_df.merge(
+        clf[["window_index"] + score_cols],
+        on="window_index",
+        how="left",
+    )
+    return merged, clf_path
+
+
+def tab_matrix_and_classifier(
+    df: pd.DataFrame,
+    x: pd.Series,
+    x_label: str,
+    K: int,
+    class_labels: List,
+    clf_aligned: Optional[pd.DataFrame],
+    clf_path: Optional[Path],
+    clf_lbl: str,
+) -> None:
+    st.markdown("### Matrix M(t) traces")
+    st.caption(
+        "Each **regressor** (row i) is trained only on examples whose true label is the one shown. "
+        "When you select a regressor, all entries M_r{i}c0…M_r{i}c{K-1} are shown "
+        "(regressor i’s prediction for each class j)."
+    )
+
+    row_options = list(range(K))
+    row_labels = {
+        i: regressor_row_label(i, class_labels[i]) for i in range(K)
+    }
+    selected_rows = st.multiselect(
+        "Regressors to plot (M rows):",
+        options=row_options,
+        default=row_options,
+        format_func=lambda i: row_labels[i],
+    )
+
+    show_clf = st.checkbox(
+        f"Show classifier scores ({clf_lbl})",
+        value=False,
+        disabled=clf_aligned is None,
+        help="Dashed traces: P(y=k) from the classification CSV.",
+    )
+    if clf_aligned is None and show_clf:
+        show_clf = False
+
+    fig = go.Figure()
+    for i in selected_rows:
+        for j in range(K):
+            col = f"M_r{i}_c{j}"
+            if col not in df.columns:
+                continue
+            lab_j = class_labels[j]
+            base_lab = base_hex_for_semantic_label(lab_j, class_labels)
+            line_color = matrix_row_shade(base_lab, i, K)
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=df[col],
+                    mode="lines",
+                    name=f"M r{i}→c{j} (y_train={class_labels[i]})",
+                    legendgroup=f"r{i}",
+                    line=dict(color=line_color, width=1.9),
+                    showlegend=True,
+                )
+            )
+
+    if show_clf and clf_aligned is not None:
+        score_cols_plot = _classifier_score_columns(clf_aligned)
+        for idx, col in enumerate(score_cols_plot):
+            yc = clf_aligned[col]
+            if yc.isna().all():
+                continue
+            short = col.replace("score_", "", 1)
+            j = matrix_j_for_score_column(col, class_labels)
+            if j is None:
+                j = idx % max(1, K)
+            lab_j = class_labels[j]
+            base_lab = base_hex_for_semantic_label(lab_j, class_labels)
+            color = classifier_shade_for_class_j(base_lab)
+            fig.add_trace(
+                go.Scatter(
+                    x=x,
+                    y=yc,
+                    mode="lines",
+                    name=f"{clf_lbl} P(y={short})",
+                    legendgroup="clf_scores",
+                    line=dict(color=color, width=2.4, dash="dash"),
+                    showlegend=True,
+                )
+            )
+
+    n_m_traces = len(selected_rows) * K if selected_rows else 0
+    fig.update_layout(
+        title="M(t) and optional classifier scores",
+        xaxis_title=x_label,
+        yaxis_title="probability",
+        height=min(720, 200 + 35 * max(1, n_m_traces + (3 if show_clf else 0))),
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+    )
+    if len(fig.data) == 0:
+        st.warning(
+            "Select at least one regressor **or** enable classifier scores."
+        )
+    else:
+        st.plotly_chart(fig, use_container_width=True)
+
+    if clf_aligned is None and clf_path is not None:
+        st.caption(
+            f"Classifier: file at `{clf_path}` not found or missing `score_*` columns."
+        )
+
+
+def tab_prevalence(meta: Dict[str, str], class_labels: List) -> None:
+    st.markdown("### True prevalence vs quantifier")
+    dataset = meta.get("dataset", "")
+    candidates = find_true_prevalence_csvs(dataset)
+    if not candidates:
+        st.warning(
+            f"No `true_window_prevalence_{dataset}_v*.csv` in `{QUANTIFICATION_DIR}`. "
+            "Run the experiment to generate `output_files/quantification/`."
+        )
+        return
+
+    if len(candidates) > 1:
+        true_path = st.selectbox(
+            "True prevalence file:",
+            options=candidates,
+            format_func=lambda p: p.name,
+        )
+    else:
+        true_path = candidates[0]
+
+    quant_path = quant_prev_csv_path(meta)
+    if not quant_path.is_file():
+        st.error(
+            f"Quantifier CSV not found: `{quant_path.name}`. "
+            "The name must match the regressor run (quantifier, seed, classifier)."
+        )
+        try:
+            st.caption(f"Full path: `{quant_path}`")
+        except Exception:
+            pass
+        return
+
+    try:
+        true_df = pd.read_csv(true_path)
+        quant_df = pd.read_csv(quant_path)
+    except Exception as e:
+        st.error(f"Error reading CSVs: {e}")
+        return
+
+    if "t_window" not in true_df.columns:
+        st.error("Missing column `t_window` in the true-prevalence CSV.")
+        return
+
+    true_prev_cols = [c for c in true_df.columns if str(c).startswith("true_prev_")]
+    quant_prev_cols = [c for c in quant_df.columns if str(c).startswith("quant_prev_")]
+    if not true_prev_cols or not quant_prev_cols:
+        st.error("Missing `true_prev_*` or `quant_prev_*` columns.")
+        return
+
+    merged = true_df.merge(
+        quant_df[["window_index"] + quant_prev_cols],
+        on="window_index",
+        how="left",
+    )
+    x = merged["t_window"]
+
+    fig = go.Figure()
+    for idx, tcp in enumerate(sorted(true_prev_cols, key=str)):
+        # true_prev_-1 -> class key "-1"
+        suf = tcp.replace("true_prev_", "", 1)
+        qcol = f"quant_prev_{suf}"
+        if qcol not in merged.columns:
+            continue
+        j = matrix_j_for_prev_suffix(suf, class_labels)
+        if j is None:
+            j = idx % max(1, len(class_labels))
+        lab_j = class_labels[j]
+        base_lab = base_hex_for_semantic_label(lab_j, class_labels)
+        # Mesma família de cor: verdadeiro mais forte; quantificador um tom mais claro (traço tracejado).
+        ctrue = base_lab
+        cquant = blend_hex(base_lab, "#ffffff", 0.38)
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=merged[tcp],
+                mode="lines",
+                name=f"True P(y={suf})",
+                line=dict(color=ctrue, width=2),
+                legendgroup=f"cls{suf}",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=merged[qcol],
+                mode="lines",
+                name=f"Quantifier P(y={suf})",
+                line=dict(color=cquant, width=2, dash="dash"),
+                legendgroup=f"cls{suf}",
+            )
+        )
+
+    fig.update_layout(
+        title="Prevalence by class: true (solid) vs quantifier (dashed)",
+        xaxis_title="t_window",
+        yaxis_title="prevalence",
+        height=520,
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        f"True: `{true_path.name}` · Quantifier: `{quant_path.name}` "
+        "(only test windows have `quant_prev_*`; validation has no dashed line)."
+    )
 
 
 def page_main():
@@ -127,228 +539,79 @@ def page_main():
         layout="wide",
         initial_sidebar_state="expanded",
     )
-    st.title("TOMS regressor matrix over time")
+    st.title("TOMS regressor and quantification")
     st.caption(
-        "Load `regressor_window_scores_*.csv` from `output_files/regressor/`. "
-        "Each row is one time window; columns `M_r{i}_c{j}` are the K×K matrix for that window."
+        "Regressor: `output_files/regressor/`. Classification / quantification: "
+        "`classification/` and `quantification/` folders."
     )
 
-    sidebar = st.sidebar
-    csv_files = sorted(REGRESSOR_DIR.glob("regressor_window_scores_*.csv"))
-    if not csv_files:
-        sidebar.warning(f"No CSV files in `{REGRESSOR_DIR}`.")
-
-    choice = sidebar.selectbox(
-        "Regressor CSV",
-        options=[str(p) for p in csv_files] if csv_files else [],
-        format_func=lambda s: Path(s).name if s else "",
-    )
-
-    uploaded = sidebar.file_uploader("Or upload a CSV", type=["csv"])
-
-    if uploaded is not None:
-        df = pd.read_csv(uploaded)
-        meta = {"filename": uploaded.name, "note": "Uploaded file"}
-        path_label = uploaded.name
-    elif choice:
-        path = Path(choice)
-        df = load_csv(path)
-        meta = parse_regressor_csv_path(path)
-        path_label = path.name
-    else:
-        st.info("Select or upload a regressor scores CSV to begin.")
+    files = find_regressor_root_csvs()
+    if not files:
+        st.error(
+            f"No CSV files matching `regressor_window_scores_*.csv` in `{REGRESSOR_DIR}`."
+        )
         return
 
-    with st.expander("Experiment metadata (from filename)", expanded=True):
-        st.json(meta)
+    labels = [f.name for f in files]
+    choice_idx = st.selectbox(
+        "Regressor CSV file:",
+        options=range(len(files)),
+        format_func=lambda i: labels[i],
+    )
+    path = files[choice_idx]
+
+    try:
+        df = load_csv(path)
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+        return
+
+    if "t_window" not in df.columns:
+        st.error(
+            "Column `t_window` not found in this CSV. "
+            "Add the column or use a compatible export."
+        )
+        return
+
+    x = df["t_window"]
+    x_label = "t_window"
 
     K, _, _ = discover_matrix_shape(df)
     if K == 0:
         st.error("No M_r*_c* columns found.")
         return
 
-    st.subheader(f"File: `{path_label}` — inferred K = {K}")
+    meta = parse_regressor_csv_path(path)
+    class_labels = infer_class_labels(K)
+    st.subheader(f"`{path.name}` — K = {K}")
+    with st.expander("File metadata"):
+        st.json(meta)
 
-    x = df["window_index"] if "window_index" in df.columns else pd.Series(np.arange(len(df)))
-    tcol = "t_window" if "t_window" in df.columns else None
-    x_label = "window_index"
+    clf_aligned, clf_path = load_classifier_scores_aligned(df, path)
+    clf_lbl = classifier_short_label(meta)
+    if clf_aligned is not None:
+        scols = _classifier_score_columns(clf_aligned)
+        st.success(
+            f"Classifier **{clf_lbl}** available (`{clf_path.name}`): {', '.join(scols)}."
+        )
+    else:
+        st.info(
+            f"No classification CSV at `{clf_path}` — only the prevalence tab may work "
+            "if files exist under `quantification/`."
+        )
 
-    tab_heat, tab_lines, tab_rows, tab_mean, tab_surface = st.tabs(
-        [
-            "Heatmap (window)",
-            "All M entries vs window",
-            "Rows over time",
-            "Row-mean simplex",
-            "Heatmap strip",
-        ]
-    )
+    tab_m, tab_q = st.tabs(["Matrix M & classifier", "True prevalence vs quantifier"])
 
-    with tab_heat:
-        win_i = st.slider(
-            "Window row index (0-based in CSV)",
-            0,
-            max(0, len(df) - 1),
-            min(7, len(df) - 1),
-            key="win_slider",
+    with tab_m:
+        tab_matrix_and_classifier(
+            df, x, x_label, K, class_labels, clf_aligned, clf_path, clf_lbl
         )
-        M = build_matrix_row(df, win_i, K)
-        split_lab = df.iloc[win_i].get("split", "") if "split" in df.columns else ""
-        n_samp = df.iloc[win_i].get("n_samples", "")
-        st.write(
-            f"**Window** index `{df.iloc[win_i].get('window_index', win_i)}`, "
-            f"split `{split_lab}`, n_samples `{n_samp}`"
-            + (f", t_window `{df.iloc[win_i][tcol]}`" if tcol else "")
-        )
-        fig_h = go.Figure(
-            data=go.Heatmap(
-                z=M,
-                x=[f"c{j}" for j in range(K)],
-                y=[f"r{i}" for i in range(K)],
-                colorscale="Viridis",
-                zmin=0,
-                zmax=1,
-                text=np.round(M, 3),
-                texttemplate="%{text}",
-            )
-        )
-        fig_h.update_layout(
-            title="M matrix (rows = regressors / classes, cols = class probabilities)",
-            xaxis_title="column (class)",
-            yaxis_title="row (regressor)",
-            height=420,
-        )
-        st.plotly_chart(fig_h, use_container_width=True)
+        if "split" in df.columns:
+            st.markdown("#### Rows by `split` (regressor)")
+            st.bar_chart(df.groupby("split").size())
 
-    with tab_lines:
-        st.markdown("Time series of every matrix entry (can be busy for large K).")
-        fig_l = go.Figure()
-        for i in range(K):
-            for j in range(K):
-                col = f"M_r{i}_c{j}"
-                if col in df.columns:
-                    fig_l.add_trace(
-                        go.Scatter(
-                            x=x.values if hasattr(x, "values") else x,
-                            y=df[col],
-                            mode="lines",
-                            name=f"r{i}c{j}",
-                            legendgroup=f"g{i}{j}",
-                            showlegend=(K <= 4),
-                        )
-                    )
-        fig_l.update_layout(
-            title="M_{i,j} vs window index",
-            xaxis_title=x_label,
-            yaxis_title="probability",
-            height=min(540, 120 + 40 * K * K),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
-        )
-        if K > 4:
-            st.caption("Legend hidden for K>4; use Plotly toolbar to isolate traces.")
-            fig_l.update_layout(showlegend=False)
-        st.plotly_chart(fig_l, use_container_width=True)
-
-    with tab_rows:
-        st.markdown("One subplot per **row** of M (each regressor’s softmax over classes).")
-        fig_r = make_subplots(
-            rows=K,
-            cols=1,
-            subplot_titles=[f"Row {i} (regressor for class axis {i})" for i in range(K)],
-            vertical_spacing=0.06,
-        )
-        for i in range(K):
-            for j in range(K):
-                col = f"M_r{i}_c{j}"
-                if col in df.columns:
-                    fig_r.add_trace(
-                        go.Scatter(
-                            x=x.values if hasattr(x, "values") else x,
-                            y=df[col],
-                            name=f"col j={j}",
-                            showlegend=(i == 0),
-                        ),
-                        row=i + 1,
-                        col=1,
-                    )
-        fig_r.update_layout(height=200 * K, title_text="Rows of M vs window")
-        fig_r.update_xaxes(title_text=x_label, row=K, col=1)
-        st.plotly_chart(fig_r, use_container_width=True)
-
-    with tab_mean:
-        mean_cols = [c for c in df.columns if str(c).startswith("score_mean_")]
-        if not mean_cols:
-            st.warning("No score_mean_* columns in this CSV.")
-        else:
-            fig_m = go.Figure()
-            xv = x.values if hasattr(x, "values") else x
-            for c in mean_cols:
-                fig_m.add_trace(go.Scatter(x=xv, y=df[c], mode="lines+markers", name=c))
-            fig_m.update_layout(
-                title="Row-mean renormalized vector (mean simplex mix) over windows",
-                xaxis_title=x_label,
-                yaxis_title="probability",
-                height=440,
-            )
-            st.plotly_chart(fig_m, use_container_width=True)
-
-    with tab_surface:
-        st.markdown(
-            "**3D surface:** one row of M across windows. **Strip heatmap:** all windows × "
-            "flattened entries (validation vs test if `split` is in the CSV)."
-        )
-        row_pick = st.selectbox(
-            "Surface: which matrix row (regressor index)",
-            list(range(K)),
-            index=0,
-            key="surface_row",
-        )
-        Zr = np.array([build_matrix_row(df, r, K)[row_pick, :] for r in range(len(df))])
-        n_win = len(df)
-        xs = np.arange(K)
-        ys = np.arange(n_win)
-        fig_s2 = go.Figure(
-            data=go.Surface(
-                x=xs,
-                y=ys,
-                z=Zr,
-                colorscale="Plasma",
-            )
-        )
-        fig_s2.update_layout(
-            title=f"Surface: M[row={row_pick}, :] — x=class column, y=window (CSV row)",
-            scene=dict(
-                xaxis_title="class column j",
-                yaxis_title="window (CSV row index)",
-                zaxis_title="M value",
-            ),
-            height=520,
-        )
-        st.plotly_chart(fig_s2, use_container_width=True)
-
-        flat = np.array([build_matrix_row(df, r, K).reshape(-1) for r in range(len(df))])
-        labels = [f"r{i}c{j}" for i in range(K) for j in range(K)]
-        xv = x.values if hasattr(x, "values") else np.asarray(x)
-        fig_strip = go.Figure(
-            data=go.Heatmap(
-                z=flat,
-                x=labels,
-                y=xv.astype(str),
-                colorscale="Turbo",
-                zmin=0,
-                zmax=1,
-            )
-        )
-        fig_strip.update_layout(
-            title="Heatmap: window × flattened M entries",
-            xaxis_title="entry",
-            yaxis_title=x_label,
-            height=max(320, min(900, 6 * len(df))),
-        )
-        st.plotly_chart(fig_strip, use_container_width=True)
-
-    if "split" in df.columns:
-        st.subheader("Splits")
-        st.bar_chart(df.groupby("split").size())
+    with tab_q:
+        tab_prevalence(meta, class_labels)
 
 
 if __name__ == "__main__":

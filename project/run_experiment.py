@@ -1,9 +1,10 @@
 """
-CLI entry point for textual quantification experiments.
+Experiment entry point. Edit ``VARIABLES.py``, then from ``project/``::
 
-Builds ``TextualExperimentConfig`` from command-line flags and calls
-``run_textual_experiments_grid``. Orchestration remains in
-``utils.main_functions_experiments``.
+    python run_experiment.py
+
+* Textual series: ``utils.main_functions_experiments``.
+* Tabular (bike, energy, news): ``utils.tubular_experiments``.
 """
 
 from __future__ import annotations
@@ -11,12 +12,13 @@ from __future__ import annotations
 import argparse
 from typing import Tuple
 
+import VARIABLES as V
 from utils.main_functions_experiments import (
     TextualExperimentConfig,
     run_textual_experiments_grid,
 )
+from utils.tubular_experiments import run_tubular_experiments_grid
 
-# Registered in data_loading_old.loading (textual + tabular).
 DATASET_CHOICES = [
     "global_covid19_tweets",
     "nepali_dataset_eng",
@@ -26,206 +28,158 @@ DATASET_CHOICES = [
     "news",
 ] + [f"hotel{i}" for i in range(1, 10)]
 
-DEFAULT_CLASSIFIERS = "amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"
+TUBULAR_DATASETS = frozenset({"bike", "energy", "news"})
+_VALID_RUN = frozenset({"global_textual", "tubular", "auto"})
+
+_VALID_TSMN_MODES = frozenset({"linear", "polynomial", "cyclic", "identity"})
+_VALID_REGRESSOR_TIME_ENCODING = frozenset({"scalar", "week"})
 
 
-def _split_csv_nonempty(s: str) -> Tuple[str, ...]:
-    parts = tuple(p.strip() for p in s.split(",") if p.strip())
-    if not parts:
-        raise argparse.ArgumentTypeError("expected at least one comma-separated item")
-    return parts
+def _resolve_run_mode() -> str:
+    if V.RUN not in _VALID_RUN:
+        raise ValueError(
+            f"VARIABLES.RUN must be one of {sorted(_VALID_RUN)}, got {V.RUN!r}"
+        )
+    if V.RUN == "auto":
+        return "tubular" if V.DATASET in TUBULAR_DATASETS else "global_textual"
+    if V.RUN == "tubular":
+        if V.DATASET not in TUBULAR_DATASETS:
+            raise ValueError(
+                f"RUN='tubular' requires VARIABLES.DATASET in {sorted(TUBULAR_DATASETS)}, "
+                f"got {V.DATASET!r}"
+            )
+        return "tubular"
+    if V.DATASET in TUBULAR_DATASETS:
+        raise ValueError(
+            f"DATASET={V.DATASET!r} is tabular: set VARIABLES.RUN to 'tubular' or 'auto'."
+        )
+    return "global_textual"
 
 
-def _split_csv_int(s: str) -> Tuple[int, ...]:
-    parts = _split_csv_nonempty(s)
-    try:
-        return tuple(int(x) for x in parts)
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(f"invalid integer list: {s!r}") from e
-
-
-def _build_tsmn_kwargs(args: argparse.Namespace) -> dict:
-    kw = {"tsmn_mode": args.tsmn_mode, "tsmn_degree": args.tsmn_degree}
-    if args.tsmn_period is not None:
-        kw["tsmn_period"] = args.tsmn_period
+def _tsmn_kwargs() -> dict:
+    mode = V.TSMN_MODE
+    if mode not in _VALID_TSMN_MODES:
+        raise ValueError(
+            f"VARIABLES.TSMN_MODE must be one of {sorted(_VALID_TSMN_MODES)}, got {mode!r}"
+        )
+    kw: dict = {"tsmn_mode": mode, "tsmn_degree": int(V.TSMN_DEGREE)}
+    if V.TSMN_PERIOD is not None:
+        kw["tsmn_period"] = float(V.TSMN_PERIOD)
     return kw
 
 
-def build_config(args: argparse.Namespace) -> TextualExperimentConfig:
-    if args.quick:
+def _as_tuple_str(name: str, value) -> Tuple[str, ...]:
+    if isinstance(value, str):
+        raise TypeError(f"VARIABLES.{name} must be a tuple/list of strings, not a single str")
+    return tuple(str(x).strip() for x in value if str(x).strip())
+
+
+def _as_tuple_int(name: str, value) -> Tuple[int, ...]:
+    return tuple(int(x) for x in value)
+
+
+def build_textual_config() -> TextualExperimentConfig:
+    if V.DATASET not in DATASET_CHOICES:
+        raise ValueError(
+            f"VARIABLES.DATASET={V.DATASET!r} is not valid. "
+            f"Choose one of: {', '.join(DATASET_CHOICES)}"
+        )
+
+    enc = str(getattr(V, "REGRESSOR_TIME_ENCODING", "scalar"))
+    if enc not in _VALID_REGRESSOR_TIME_ENCODING:
+        raise ValueError(
+            f"VARIABLES.REGRESSOR_TIME_ENCODING must be one of {sorted(_VALID_REGRESSOR_TIME_ENCODING)}, "
+            f"got {enc!r}"
+        )
+
+    if V.QUICK:
         seeds: Tuple[int, ...] = (1,)
         qua_methods = ("ACC",)
         tsa_methods = ("QFY",)
     else:
-        seeds = args.seeds
-        qua_methods = args.qua_methods
-        tsa_methods = args.tsa_methods
+        seeds = _as_tuple_int("SEEDS", V.SEEDS)
+        qua_methods = _as_tuple_str("QUA_METHODS", V.QUA_METHODS)
+        tsa_methods = _as_tuple_str("TSA_METHODS", V.TSA_METHODS)
 
     return TextualExperimentConfig(
         seeds=seeds,
-        val_length=args.val_length,
-        max_test_chunks=args.max_test_chunks,
-        dataset_name=args.dataset,
-        classifiers=args.classifiers,
+        val_length=int(V.VAL_LENGTH),
+        max_test_chunks=int(V.MAX_TEST_CHUNKS),
+        dataset_name=V.DATASET,
+        classifiers=_as_tuple_str("CLASSIFIERS", V.CLASSIFIERS),
         qua_methods=qua_methods,
         tsa_methods=tsa_methods,
-        exp_types=args.exp_types,
-        regressor_label=args.regressor_label,
-        regressor_time_column=args.regressor_time_column,
-        regressor_tsmn_kwargs=_build_tsmn_kwargs(args),
-        unified_window=args.unified_window,
-        log_prefix=args.log_prefix,
+        exp_types=_as_tuple_str("EXP_TYPES", V.EXP_TYPES),
+        regressor_label=str(V.REGRESSOR_LABEL),
+        regressor_time_column=str(V.REGRESSOR_TIME_COLUMN),
+        regressor_time_encoding=enc,
+        regressor_tsmn_kwargs=_tsmn_kwargs(),
+        unified_window=int(V.UNIFIED_WINDOW),
+        log_prefix=str(V.LOG_PREFIX),
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Grid of textual quantification experiments: seeds × exp_types × quantifiers "
-            "× classifiers × (TSA when exp_type=original). "
-            "Config is driven entirely from these flags (see also utils.main_functions_experiments.TextualExperimentConfig)."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f"""
-Datasets (--dataset): {", ".join(DATASET_CHOICES)}
-
-Examples:
-  python run_experiment.py --quick
-  python run_experiment.py --dataset hotel3 --val-length 20 --seeds 1,2
-  python run_experiment.py --dataset global_covid19_tweets \\
-      --qua-methods DyS,DyS-Opt --exp-types TOMS,original \\
-      --classifiers {DEFAULT_CLASSIFIERS}
-
-With --quick, --seeds / --qua-methods / --tsa-methods are ignored (smoke preset).
-""",
-    )
-    parser.add_argument(
-        "--run",
-        choices=["global_textual"],
-        default="global_textual",
-        help="Entrypoint (only the textual grid is implemented).",
-    )
-    parser.add_argument(
-        "--dataset",
-        choices=DATASET_CHOICES,
-        default="global_covid19_tweets",
-        metavar="NAME",
-        help="Key passed to data_loading.loading.",
-    )
-    parser.add_argument(
-        "--seeds",
-        type=_split_csv_int,
-        metavar="S,...",
-        default=(1, 2, 3),
-        help="Comma-separated random seeds (ignored if --quick). Default: 1,2,3",
-    )
-    parser.add_argument(
-        "--val-length",
-        type=int,
-        default=15,
-        metavar="N",
-        help="Number of first time chunks used as validation windows.",
-    )
-    parser.add_argument(
-        "--max-test-chunks",
-        type=int,
-        default=5000,
-        metavar="N",
-        help="After val_length, cap the number of test chunks (truncation).",
-    )
-    parser.add_argument(
-        "--classifiers",
-        type=_split_csv_nonempty,
-        default=_split_csv_nonempty(DEFAULT_CLASSIFIERS),
-        metavar="ID,...",
-        help="Comma-separated classifier ids (HF model names or 'vader' where supported).",
-    )
-    parser.add_argument(
-        "--qua-methods",
-        type=_split_csv_nonempty,
-        default=_split_csv_nonempty("DyS,DyS-Opt"),
-        metavar="NAME,...",
-        help="Quantifiers (e.g. DyS, DyS-Opt, ACC, GPAC, EDy, CC, ReadMe2). Ignored if --quick.",
-    )
-    parser.add_argument(
-        "--tsa-methods",
-        type=_split_csv_nonempty,
-        default=_split_csv_nonempty("QFY,MA,KFMA"),
-        metavar="NAME,...",
-        help="Temporal adjustment methods for exp_type=original (QFY, MA, KFMA). Ignored if --quick.",
-    )
-    parser.add_argument(
-        "--exp-types",
-        type=_split_csv_nonempty,
-        default=_split_csv_nonempty("TOMS"),
-        metavar="TYPE,...",
-        help="Experiment modes: TOMS and/or original.",
-    )
-    parser.add_argument(
-        "--regressor-label",
-        default="TSMN",
-        help="Regressor backend when training TOMS ('TSMN' or 'LR').",
-    )
-    parser.add_argument(
-        "--regressor-time-column",
-        default="TweetAt",
-        metavar="COL",
-        help="DataFrame column for times (use 'date' for hotel-*; Covid uses TweetAt).",
-    )
-    parser.add_argument(
-        "--tsmn-mode",
-        default="linear",
-        choices=["linear", "polynomial", "cyclic", "identity"],
-        help="TimeSeriesMultinomialRegressor feature mode (TOMS / TSMN).",
-    )
-    parser.add_argument(
-        "--tsmn-degree",
-        type=int,
-        default=3,
-        help="Polynomial degree when --tsmn-mode polynomial.",
-    )
-    parser.add_argument(
-        "--tsmn-period",
-        type=float,
-        default=None,
-        metavar="P",
-        help="Period for cyclic mode (optional; default: model default).",
-    )
-    parser.add_argument(
-        "--unified-window",
-        type=int,
-        default=4,
-        metavar="W",
-        help="Unified window parameter for initial prevalence slice.",
-    )
-    parser.add_argument(
-        "--log-prefix",
-        default="[run_experiment]",
-        help="Prefix printed on log lines.",
-    )
-    parser.add_argument(
-        "--quick",
-        action="store_true",
-        help=(
-            "Smoke test: seed=1, quantifier=ACC, TSA=QFY only (overrides --seeds, "
-            "--qua-methods, --tsa-methods). Writes …_quick.csv."
+            "Quantification grid driven by VARIABLES.py (no experiment flags on the CLI)."
         ),
     )
+    parser.parse_args()
 
-    args = parser.parse_args()
-    cfg = build_config(args)
+    if V.DATASET not in DATASET_CHOICES:
+        raise ValueError(
+            f"VARIABLES.DATASET={V.DATASET!r} is not valid. "
+            f"Choose one of: {', '.join(DATASET_CHOICES)}"
+        )
+
+    mode = _resolve_run_mode()
+    log_prefix = str(V.LOG_PREFIX)
 
     def cli_log(msg: str) -> None:
-        print(f"{cfg.log_prefix} {msg}", flush=True)
+        print(f"{log_prefix} {msg}", flush=True)
 
+    if mode == "tubular":
+        seeds = (1,) if V.QUICK else _as_tuple_int("SEEDS", V.SEEDS)
+        qua_m = ("ACC",) if V.QUICK else _as_tuple_str("QUA_METHODS", V.QUA_METHODS)
+        tsa_m = ("QFY",) if V.QUICK else _as_tuple_str("TSA_METHODS", V.TSA_METHODS)
+        clf = _as_tuple_str("CLASSIFIERS", V.CLASSIFIERS)
+        exp_types = _as_tuple_str("EXP_TYPES", V.EXP_TYPES)
+        cfg_tub = build_textual_config()
+        cli_log(
+            "__main__: "
+            f"mode=tubular, dataset={V.DATASET!r}, quick={V.QUICK}, "
+            f"val_length={V.VAL_LENGTH}, seeds={seeds}, qua={qua_m}, "
+            f"classifiers={clf}, exp_types={exp_types}, "
+            f"regressor_time_column={cfg_tub.regressor_time_column!r}"
+        )
+        run_tubular_experiments_grid(
+            dataset_name=V.DATASET,
+            val_length=int(V.VAL_LENGTH),
+            seeds=seeds,
+            qua_methods=qua_m,
+            tsa_methods=tsa_m,
+            classifiers=clf,
+            exp_types=exp_types,
+            cfg_toms=cfg_tub,
+            time_column=str(cfg_tub.regressor_time_column),
+            unified_window=int(V.UNIFIED_WINDOW),
+            log_prefix=log_prefix,
+            quick=V.QUICK,
+        )
+        cli_log("Main run finished.")
+        return
+
+    cfg = build_textual_config()
     cli_log(
         "__main__: "
-        f"run={args.run!r}, dataset={args.dataset!r}, quick={args.quick}, "
-        f"val_length={cfg.val_length}, seeds={cfg.seeds if not args.quick else '(quick:1)'}, "
-        f"qua={cfg.qua_methods if not args.quick else '(quick:ACC)'}, "
+        f"mode=global_textual, dataset={V.DATASET!r}, quick={V.QUICK}, "
+        f"val_length={cfg.val_length}, "
+        f"seeds={cfg.seeds if not V.QUICK else '(quick: 1)'}, "
+        f"qua={cfg.qua_methods if not V.QUICK else '(quick: ACC)'}, "
         f"exp_types={cfg.exp_types}"
     )
-    run_textual_experiments_grid(cfg, quick=args.quick)
+    run_textual_experiments_grid(cfg, quick=V.QUICK)
     cli_log("Main run finished.")
 
 

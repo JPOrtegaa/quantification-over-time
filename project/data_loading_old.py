@@ -298,15 +298,14 @@ def energy():
 
     dta['date'] = dta['date'].str[:10]
     _ = dta['date'].value_counts().sort_index()
-
+    # One chunk per calendar day; index i follows sorted unique YYYY-MM-DD (chronological).
     timestamps = _.index.values.tolist()
     amounts = np.array(_.values.tolist())
 
     data_dict = {}
     pos_nums = []
     for i, t in enumerate(timestamps):
-        data_dict[i] = dta[dta['date'] == t].copy()
-        del data_dict[i]['date']
+        data_dict[i] = dta[dta["date"] == t].copy()
 
         pos_num = dta[(dta['date'] == t) & (dta['label'] == 1)]['date'].count()
         pos_nums.append(pos_num)

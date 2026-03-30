@@ -136,9 +136,23 @@ def analyzer(df_text, mod, classes, hf_context=None):
 
         return [pred_labels, pred_scores, [acc, f1]]
 
-    # PART 2: numeral classification for mosquito datasets
+    # PART 2: numeral / tabular (sklearn). Exclude label, ``_window_id``, optional time
+    # columns from ``df_text.attrs['sklearn_exclude_cols']``, and any ``_toms_*``.
     else:
-        df_x = df_text.loc[:, ~df_text.columns.isin(["label"])]
+        extra_drop = ()
+        try:
+            if hasattr(df_text, "attrs") and df_text.attrs:
+                raw = df_text.attrs.get("sklearn_exclude_cols", ()) or ()
+                extra_drop = tuple(str(c) for c in raw)
+        except (TypeError, AttributeError):
+            extra_drop = ()
+        drop = {"label", *extra_drop}
+        if "_window_id" in df_text.columns:
+            drop.add("_window_id")
+        for col in df_text.columns:
+            if col != "label" and str(col).startswith("_toms_"):
+                drop.add(col)
+        df_x = df_text.loc[:, ~df_text.columns.isin(drop)]
         df_y = df_text["label"]
 
         pred_labels = mod.predict(df_x)

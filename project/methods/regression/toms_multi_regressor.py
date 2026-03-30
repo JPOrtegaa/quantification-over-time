@@ -2,16 +2,19 @@
 TOMS: K TimeSeriesMultinomial regressors (one per class), each trained only on rows whose
 true label is that class.
 
-Training uses each row's parsed datetime as a continuous time (Unix epoch seconds, sub-day
-resolution). Inference, CSV summaries, and quantifier calibration use one scalar per window:
-the median of those seconds over all rows in the chunk.
+Time features (see ``time_encoding``):
+
+* ``scalar`` (default): each row uses Unix epoch seconds; each window uses the median of
+  those seconds for inference.
+* ``week``: 7 columns one-hot for weekday (pandas ``dayofweek``: Monday=0 … Sunday=6);
+  training uses per-row one-hot; inference uses one-hot of the median calendar day in the chunk.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TextIO, Tuple
+from typing import Any, Dict, List, Optional, TextIO, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -36,15 +39,21 @@ def _per_regressor_train_csv_path(
 
 
 def _build_per_regressor_train_rows(
-    t_k: np.ndarray,
+    X_k: np.ndarray,
     Y_k: np.ndarray,
     classes: List,
+    time_encoding: str,
 ) -> pd.DataFrame:
     """
-    Columns that match regressor training input only: ``t_epoch_seconds`` + one column per
-    class label (``str(c)``) with softmax scores from the classifier (shape Y_k (n, K)).
+    Columns that match regressor training input + one column per class (softmax from clf).
+    Scalar mode: ``t_epoch_seconds``. Week mode: ``dow_0``…``dow_6`` (Mon…Sun).
     """
-    data: Dict[str, Any] = {"t_epoch_seconds": t_k.astype(np.float64)}
+    data: Dict[str, Any] = {}
+    if time_encoding == "week":
+        for d in range(7):
+            data[f"dow_{d}"] = X_k[:, d].astype(np.float64)
+    else:
+        data["t_epoch_seconds"] = np.asarray(X_k, dtype=np.float64).ravel()
     for j, c in enumerate(classes):
         data[str(c)] = Y_k[:, j].astype(np.float64)
     return pd.DataFrame(data)
@@ -53,7 +62,14 @@ def _build_per_regressor_train_rows(
 def _parse_time_series(time_series) -> pd.Series:
     """Parse time column to timezone-naive datetimes (same rules as legacy covid MM-DD)."""
     s = time_series if isinstance(time_series, pd.Series) else pd.Series(time_series)
-    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    strs = s.astype(str).str.strip()
+    # ISO calendar dates (tabular energy, etc.): avoid dayfirst=True — it can mis-parse
+    # YYYY-MM-DD in some pandas builds and break monotonic t_window medians.
+    iso_mask = strs.str.match(r"^\d{4}-\d{2}-\d{2}$", na=False)
+    if bool(iso_mask.all()):
+        t = pd.to_datetime(strs, format="%Y-%m-%d", errors="coerce")
+    else:
+        t = pd.to_datetime(s, errors="coerce", dayfirst=True)
     if t.isna().any():
         mmdd = s.astype(str).str.strip() + "-2000"
         t_fallback = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
@@ -73,19 +89,101 @@ def _time_column_to_epoch_seconds(time_series) -> np.ndarray:
     return (ns / 1e9).reshape(-1, 1)
 
 
+def _weekday_one_hot_from_series(time_series) -> np.ndarray:
+    """One row per sample: Monday=0 … Sunday=6 → 7 columns. Shape (n, 7)."""
+    t = _parse_time_series(time_series)
+    dows = t.dt.dayofweek.to_numpy(dtype=int)
+    n = len(dows)
+    X = np.zeros((n, 7), dtype=np.float64)
+    X[np.arange(n, dtype=int), dows] = 1.0
+    return X
+
+
+def _window_median_weekday_one_hot(
+    ts_chunks, time_column: str
+) -> Dict[int, np.ndarray]:
+    """Per window: one-hot of weekday of median timestamp in chunk. Values shape (1, 7)."""
+    out: Dict[int, np.ndarray] = {}
+    for wi in _sorted_window_keys(ts_chunks):
+        df = ts_chunks[wi]
+        if time_column not in df.columns:
+            raise KeyError(
+                f"time column {time_column!r} missing in window {wi}; "
+                f"columns={list(df.columns)}"
+            )
+        raw_t = _parse_time_series(df[time_column])
+        med = raw_t.median()
+        dow = int(pd.Timestamp(med).dayofweek)
+        v = np.zeros((1, 7), dtype=np.float64)
+        v[0, dow] = 1.0
+        out[wi] = v
+    return out
+
+
+def build_window_row_features(
+    ts_chunks,
+    time_column: str,
+    time_encoding: str,
+    window_t: Dict[int, float],
+) -> Dict[int, np.ndarray]:
+    """
+    Per window index, feature row passed to sklearn regressors at inference: (1, 1) epoch seconds
+    or (1, 7) weekday one-hot.
+    """
+    if time_encoding == "week":
+        return _window_median_weekday_one_hot(ts_chunks, time_column)
+    return {wi: np.array([[window_t[wi]]], dtype=np.float64) for wi in window_t}
+
+
 @dataclass
 class TOMSMultiRegressorBundle:
-    """K regressors + map window_index -> scalar t (median epoch seconds in window) + class order."""
+    """K regressors + per-window time features + median epoch (for exports) + class order."""
 
     regressors: List[Any]
     window_t: Dict[int, float]
     classes: List
+    window_row_features: Dict[int, np.ndarray]
+    time_encoding: str = "scalar"
+
+
+def _sorted_window_keys(ts_chunks) -> List:
+    """Sort chunk keys numerically when possible (avoids '10' before '2' if keys were str)."""
+
+    def _key(k: Any) -> Union[int, Any]:
+        if isinstance(k, (int, np.integer)):
+            return int(k)
+        if isinstance(k, str) and k.isdigit():
+            return int(k)
+        return k
+
+    return sorted(ts_chunks.keys(), key=_key)
+
+
+def diagnose_scalar_time_monotonicity(
+    ts_chunks, time_column: str
+) -> Dict[str, Any]:
+    """
+    Check whether median t per window is non-decreasing in window key order.
+    Call after scalar_time_per_window to validate exports / dashboards.
+    """
+    wt = scalar_time_per_window(ts_chunks, time_column)
+    order = _sorted_window_keys(ts_chunks)
+    violations: List[Tuple[Any, Any, float, float]] = []
+    for a, b in zip(order, order[1:]):
+        if wt[b] + 1e-9 < wt[a]:
+            violations.append((a, b, float(wt[a]), float(wt[b])))
+    return {
+        "time_column": time_column,
+        "n_windows": len(order),
+        "monotonic_non_decreasing": len(violations) == 0,
+        "violations": violations[:50],
+    }
 
 
 def scalar_time_per_window(ts_chunks, time_column: str) -> Dict[int, float]:
     """One scalar t per window: median of epoch seconds over all rows in the chunk."""
     out = {}
-    for wi in sorted(ts_chunks.keys()):
+    for wi in _sorted_window_keys(ts_chunks):
         df = ts_chunks[wi]
         if time_column not in df.columns:
             raise KeyError(
@@ -110,13 +208,15 @@ def attach_window_ids(val_set: pd.DataFrame, ts_chunks, val_length: int) -> pd.D
     return vs
 
 
-def score_matrix_at_t(bundle: TOMSMultiRegressorBundle, t_scalar: float) -> np.ndarray:
+def score_matrix_at_window(bundle: TOMSMultiRegressorBundle, wi: int) -> np.ndarray:
     """Matrix (K, K): row k is normalized output of regressor k (K-dim vector over classes)."""
     K = len(bundle.regressors)
     M = np.zeros((K, K), dtype=np.float64)
-    t_arr = np.array([float(t_scalar)], dtype=np.float64)
+    X = np.asarray(bundle.window_row_features[wi], dtype=np.float64)
+    if X.ndim == 1:
+        X = X.reshape(1, -1)
     for k, reg in enumerate(bundle.regressors):
-        row = reg.predict(t_arr.reshape(-1, 1))
+        row = reg.predict(X)
         row = np.asarray(row, dtype=np.float64).reshape(-1)
         if row.shape[0] != K:
             raise ValueError(f"Regressor {k} expected {K} classes, got {row.shape}")
@@ -144,9 +244,9 @@ def write_bundle_window_scores_csv(
     """CSV: one row per window with scalar t, M (KxK) entries, and row-mean renormalized vector."""
     rows = []
     K = len(classes)
-    for wi in sorted(ts_chunks.keys()):
+    for wi in _sorted_window_keys(ts_chunks):
         t_w = bundle.window_t[wi]
-        M = score_matrix_at_t(bundle, t_w)
+        M = score_matrix_at_window(bundle, wi)
         v = mean_simplex_from_matrix(M)
         split = "val" if wi < val_length else "test"
         row = {
@@ -181,12 +281,16 @@ def write_toms_test_window_csvs(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     K = len(classes)
-    for wi in sorted(ts_chunks.keys()):
+    for wi in _sorted_window_keys(ts_chunks):
         if wi < val_length:
             continue
         t_w = bundle.window_t[wi]
-        M = score_matrix_at_t(bundle, t_w)
+        M = score_matrix_at_window(bundle, wi)
         row: Dict[str, Any] = {"t": float(t_w)}
+        if bundle.time_encoding == "week":
+            oh = np.asarray(bundle.window_row_features[wi], dtype=np.float64).ravel()
+            for d in range(7):
+                row[f"dow_{d}"] = float(oh[d])
         for i in range(K):
             for j in range(K):
                 row[f"M_r{i}_c{j}"] = float(M[i, j])
@@ -206,17 +310,34 @@ def fit_toms_multi_regressors(
     log_file: Optional[Path],
     train_dir: Optional[Path] = None,
     train_name_prefix: str = "toms_train",
+    window_row_features: Optional[Dict[int, np.ndarray]] = None,
+    time_encoding: str = "scalar",
     **trainer_kw,
 ) -> TOMSMultiRegressorBundle:
+    if time_encoding not in ("scalar", "week"):
+        raise ValueError(f"time_encoding must be 'scalar' or 'week', got {time_encoding!r}")
     if time_column not in val_set.columns:
         raise KeyError(
             f"time column {time_column!r} missing in val_set; "
             f"columns={list(val_set.columns)}"
         )
+    if window_row_features is None:
+        if time_encoding != "scalar":
+            raise ValueError(
+                "window_row_features must be provided when time_encoding is 'week'"
+            )
+        window_row_features = {
+            wi: np.array([[window_t[wi]]], dtype=np.float64) for wi in window_t
+        }
+    wrf = {int(wi): np.asarray(v, dtype=np.float64) for wi, v in window_row_features.items()}
+
     _, pred_scores, _ = Classifying.analyzer(val_set, classifier, classes)
     Y_all = pred_scores[[cl for cl in classes]].to_numpy(dtype=np.float64)
     true_y = val_set["label"].reset_index(drop=True).astype(int).to_numpy()
-    t_all = _time_column_to_epoch_seconds(val_set[time_column]).ravel()
+    if time_encoding == "week":
+        X_all = _weekday_one_hot_from_series(val_set[time_column])
+    else:
+        X_all = _time_column_to_epoch_seconds(val_set[time_column])
 
     def _log(msg: str) -> None:
         if log_file is None:
@@ -242,7 +363,10 @@ def fit_toms_multi_regressors(
         if n_k == 0:
             _log(f"class={cl} (idx={k}): no samples; using constant uniform regressor.")
             if train_dir_p is not None:
-                empty_cols = ["t_epoch_seconds"] + [str(c) for c in classes]
+                if time_encoding == "week":
+                    empty_cols = [f"dow_{d}" for d in range(7)] + [str(c) for c in classes]
+                else:
+                    empty_cols = ["t_epoch_seconds"] + [str(c) for c in classes]
                 pd.DataFrame(columns=empty_cols).to_csv(csv_path, index=False)
 
             class _UniformReg:
@@ -254,21 +378,21 @@ def fit_toms_multi_regressors(
             regressors.append(_UniformReg())
             continue
 
-        t_k = t_all[mask].astype(np.float64)
+        X_k = X_all[mask].astype(np.float64)
         Y_k = Y_all[mask]
         _log(
-            f"class={cl} (idx={k}): n={n_k}, t_min={t_k.min():.6g}, t_max={t_k.max():.6g}, "
-            f"Y.shape={Y_k.shape}"
+            f"class={cl} (idx={k}): n={n_k}, time_encoding={time_encoding!r}, "
+            f"X.shape={X_k.shape}, Y.shape={Y_k.shape}"
         )
-        _log(f"  t_sample (first 5): {t_k[:5]}")
+        _log(f"  X_sample row0: {X_k[0]}")
         _log(f"  Y_sample row0: {Y_k[0]}")
 
         if train_dir_p is not None:
-            tr_df = _build_per_regressor_train_rows(t_k, Y_k, classes)
+            tr_df = _build_per_regressor_train_rows(X_k, Y_k, classes, time_encoding)
             tr_df.to_csv(csv_path, index=False)
 
         reg = regression_trainingModel.trainer(
-            t_k.reshape(-1, 1),
+            X_k,
             Y_k,
             model_name,
             random_state,
@@ -277,7 +401,11 @@ def fit_toms_multi_regressors(
         regressors.append(reg)
 
     bundle = TOMSMultiRegressorBundle(
-        regressors=regressors, window_t=dict(window_t), classes=list(classes)
+        regressors=regressors,
+        window_t=dict(window_t),
+        classes=list(classes),
+        window_row_features=wrf,
+        time_encoding=time_encoding,
     )
     _log("--- End of train ---\n")
     return bundle
@@ -299,8 +427,7 @@ def scores_dataframe_from_bundle(
     matrices = []
     for i in range(len(df_text)):
         w = int(wids[i])
-        t_w = bundle.window_t[w]
-        M = score_matrix_at_t(bundle, t_w)
+        M = score_matrix_at_window(bundle, w)
         matrices.append(M)
         v = mean_simplex_from_matrix(M)
         rows_scores.append(v)
@@ -346,10 +473,10 @@ def log_validation_and_test_matrices(
     K = len(classes)
 
     with open(log_file, "a", encoding="utf-8") as fp:
-        fp.write("--- VALIDATION: M matrix (KxK) per window (scalar t) ---\n")
+        fp.write("--- VALIDATION: M matrix (KxK) per window ---\n")
         for w in range(val_length):
             t_w = bundle.window_t[w]
-            M = score_matrix_at_t(bundle, t_w)
+            M = score_matrix_at_window(bundle, w)
             v = mean_simplex_from_matrix(M)
             fp.write(f"  window={w} split=val t={t_w:.8g}\n")
             fp.write(f"    M ({K}x{K}):\n{np.array2string(M, precision=6)}\n")
@@ -365,12 +492,11 @@ def log_validation_and_test_matrices(
         for j in sorted(test_set_dict.keys()):
             df = test_set_dict[j]
             wi = j + val_length
-            if wi not in bundle.window_t:
+            t_w = bundle.window_t.get(wi)
+            if t_w is None:
                 raw_t = _time_column_to_epoch_seconds(df[time_column]).ravel()
                 t_w = float(np.median(raw_t))
-            else:
-                t_w = bundle.window_t[wi]
-            M = score_matrix_at_t(bundle, t_w)
+            M = score_matrix_at_window(bundle, wi)
             v_reg = mean_simplex_from_matrix(M)
             _, pred_hf, _ = Classifying.analyzer(
                 df, classifier, classes, hf_context=f"log w{wi}"

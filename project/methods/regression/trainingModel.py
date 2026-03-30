@@ -16,7 +16,14 @@ def trainer(train_L, train_predictions, model_name, seed, **trainer_kw):
         degree = trainer_kw.get("tsmn_degree", 3)
         period = trainer_kw.get("tsmn_period")
         regressor = TimeSeriesMultinomialRegressor(mode=mode, degree=degree, period=period)
-        t = np.asanyarray(train_L, dtype=np.float64).ravel()
+        train_L = np.asanyarray(train_L, dtype=np.float64)
+        # (n, d) with d>1: fixed design matrix (e.g. weekday one-hot); do not ravel
+        if train_L.ndim == 2 and train_L.shape[1] > 1:
+            t = train_L
+        elif train_L.ndim == 2 and train_L.shape[1] == 1:
+            t = train_L.ravel()
+        else:
+            t = train_L.ravel()
         regressor.fit(t, train_predictions)
         return regressor
 

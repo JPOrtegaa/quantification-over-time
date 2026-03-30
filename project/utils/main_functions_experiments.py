@@ -25,6 +25,8 @@ from methods.classification import Classifying
 from methods.regression.toms_multi_regressor import (
     TOMSMultiRegressorBundle,
     attach_window_ids,
+    build_window_row_features,
+    diagnose_scalar_time_monotonicity,
     fit_toms_multi_regressors,
     log_validation_and_test_matrices,
     scalar_time_per_window,
@@ -55,6 +57,8 @@ class TextualExperimentConfig:
     exp_types: Tuple[str, ...] = ("TOMS",)
     regressor_label: str = "TSMN"
     regressor_time_column: str = "TweetAt"
+    # TOMS: "scalar" (epoch) or "week" (7-d weekday one-hot, Mon–Sun)
+    regressor_time_encoding: str = "scalar"
     regressor_tsmn_kwargs: dict = field(
         default_factory=lambda: {"tsmn_mode": "linear", "tsmn_degree": 3}
     )
@@ -300,7 +304,39 @@ def master_textual_experiment(
         compute_initial_window_and_split(cfg, dataset, ts_chunks, ts_prevalence)
     )
 
+    true_prev_path = (
+        config.OUTPUT_QUANTIFICATION_DIR
+        / f"true_window_prevalence_{dataset[0]}_v{dataset[1]}.csv"
+    )
+    qfy.write_true_window_prevalence_csv(
+        ts_prevalence,
+        ts_chunks,
+        c,
+        dataset[1],
+        true_prev_path,
+        time_column=cfg.regressor_time_column,
+    )
+    _log(cfg, f"True per-window prevalence → {true_prev_path}")
+
     window_t = scalar_time_per_window(ts_chunks, cfg.regressor_time_column)
+    window_row_features = build_window_row_features(
+        ts_chunks,
+        cfg.regressor_time_column,
+        cfg.regressor_time_encoding,
+        window_t,
+    )
+    mono = diagnose_scalar_time_monotonicity(ts_chunks, cfg.regressor_time_column)
+    if mono["monotonic_non_decreasing"]:
+        _log(
+            cfg,
+            f"t_window medians: non-decreasing in window order ({mono['n_windows']} windows).",
+        )
+    else:
+        _log(
+            cfg,
+            "WARNING: t_window medians not non-decreasing — "
+            f"first violations (up to 5): {mono['violations'][:5]}",
+        )
     val_set = attach_window_ids(val_set, ts_chunks, dataset[1])
 
     clf_slug = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(classifier))[:80]
@@ -340,8 +376,10 @@ def master_textual_experiment(
             )
         _log(
             cfg,
-            "TOMS: training K class-conditional regressors (per-row epoch-seconds t; "
-            f"inference uses median t per window); log file: {log_path}.",
+            "TOMS: training K class-conditional regressors "
+            f"(time_encoding={cfg.regressor_time_encoding!r}; "
+            "inference uses one row of features per window); "
+            f"log file: {log_path}.",
         )
         reg_out = (
             config.OUTPUT_REGRESSOR_DIR
@@ -368,6 +406,8 @@ def master_textual_experiment(
                 log_path,
                 train_dir=train_reg_dir,
                 train_name_prefix=reg_out.stem,
+                window_row_features=window_row_features,
+                time_encoding=cfg.regressor_time_encoding,
                 **cfg.regressor_tsmn_kwargs,
             )
         finally:
@@ -437,6 +477,20 @@ def master_textual_experiment(
         f"Test quantification finished (prevalence array shape: {quantified_dsts.shape}).",
     )
 
+    quant_prev_path = (
+        config.OUTPUT_QUANTIFICATION_DIR
+        / f"quant_prev_{dataset[0]}_{quantifier}_seed{random_state}_{clf_slug}.csv"
+    )
+    qfy.write_quantified_prevalence_csv(
+        quantified_dsts,
+        c,
+        dataset[1],
+        quant_prev_path,
+        ts_chunks=ts_chunks,
+        time_column=cfg.regressor_time_column,
+    )
+    _log(cfg, f"Quantifier prevalence (test windows) → {quant_prev_path}")
+
     if exp_type == "TOMS" and regressor is not None:
         log_validation_and_test_matrices(
             regressor,
@@ -500,7 +554,7 @@ def run_textual_experiments_grid(cfg: TextualExperimentConfig, quick: bool = Fal
     if quick:
         _log(
             cfg,
-            "@run_textual_experiments_grid · QUICK mode (--quick): "
+            "@run_textual_experiments_grid · QUICK mode (VARIABLES.QUICK): "
             f"seeds={run_seeds}, qua={run_qua}, TSA(when original)={run_tsa}, "
             f"EXP_TYPES={run_exp} (smaller tqdm total).",
         )

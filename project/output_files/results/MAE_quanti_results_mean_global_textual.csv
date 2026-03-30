@@ -1,3 +1,0 @@
-,Dataset,ExpType,QuaMethod,Classifier,QFY,MA,KFMA,best_method
-0,hotel1,TOMS,DyS,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.3012656854557134,,,QFY
-1,hotel1,TOMS,DyS-Opt,amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061,0.3012656854557134,,,QFY

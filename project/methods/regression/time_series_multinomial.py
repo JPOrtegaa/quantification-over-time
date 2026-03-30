@@ -69,17 +69,25 @@ class TimeSeriesMultinomialRegressor:
         Transform the 1D time vector into a 2D feature matrix X, according
         to the chosen basis expansion and normalization.
 
+        If ``t`` is already 2D with more than one column (e.g. weekday one-hot),
+        it is returned unchanged — multinomial logits are ``X @ C`` with no
+        time warping or polynomial expansion.
+
         Parameters
         ----------
         t : array-like
-            Time values of shape (n_samples,).
+            Time values of shape (n_samples,) or design matrix (n_samples, d), d>1.
 
         Returns
         -------
         X : np.ndarray
             Feature matrix of shape (n_samples, n_features).
         """
-        t = np.asanyarray(t).astype(np.float64).flatten()
+        t = np.asanyarray(t, dtype=np.float64)
+        if t.ndim == 2 and t.shape[1] > 1:
+            return t
+
+        t = t.ravel()
 
         if self.mode == "identity":
             return t.reshape(-1, 1)
@@ -160,10 +168,12 @@ class TimeSeriesMultinomialRegressor:
         self : object
             Fitted instance.
         """
-        # If using normalization, re-compute min/max when refitting
-        if self.mode != "identity":
-            self.t_min_ = None
-            self.t_max_ = None
+        t_series = np.asanyarray(t_series, dtype=np.float64)
+        # Pre-baked feature rows (e.g. 7-d weekday one-hot): skip scalar time stats
+        if not (t_series.ndim == 2 and t_series.shape[1] > 1):
+            if self.mode != "identity":
+                self.t_min_ = None
+                self.t_max_ = None
 
         X = self._prepare_features(t_series)
         d, K = X.shape[1], Y_soft.shape[1]
@@ -174,7 +184,7 @@ class TimeSeriesMultinomialRegressor:
             initial_guess,
             args=(X, np.asanyarray(Y_soft, dtype=np.float64)),
             method="L-BFGS-B",
-            options={"disp": False},
+            options={"disp": False, "gtol": 1e-8},
         )
         if not res.success:
             print(f"Convergence warning (TimeSeriesMultinomialRegressor): {res.message}")
@@ -200,7 +210,7 @@ class TimeSeriesMultinomialRegressor:
         np.ndarray, shape (n_samples, n_classes)
             Predicted probability for each class and sample.
         """
-        t_series = np.asanyarray(t_series, dtype=np.float64).flatten()
+        t_series = np.asanyarray(t_series, dtype=np.float64)
         X = self._prepare_features(t_series)
         logits = X @ self.C_
         return softmax(logits)
@@ -211,8 +221,8 @@ class TimeSeriesMultinomialRegressor:
 
         Parameters
         ----------
-        X : array-like, shape (n_samples, 1) or (n_samples,)
-            Time values to predict for. If 2D, will be converted to 1D.
+        X : array-like, shape (n_samples, 1), (n_samples, d) with d>1, or (n_samples,)
+            Scalar time, or a design matrix row (e.g. one-hot week).
 
         Returns
         -------
@@ -220,4 +230,6 @@ class TimeSeriesMultinomialRegressor:
             Probability distributions over classes for each sample.
         """
         X = np.asanyarray(X, dtype=np.float64)
+        if X.ndim == 2 and X.shape[1] > 1:
+            return self.predict_proba(X)
         return self.predict_proba(X.ravel())

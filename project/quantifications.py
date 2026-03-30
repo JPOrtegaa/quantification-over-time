@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 from pathlib import Path
 from methods.quantifiers import DyS, DyS_Opt, ACC, GPAC, EDy
@@ -9,7 +11,10 @@ from utils import mae, mse
 import config
 from methods.regression.toms_multi_regressor import (
     TOMSMultiRegressorBundle,
-    score_matrix_at_t,
+    _parse_time_series,
+    _sorted_window_keys,
+    scalar_time_per_window,
+    score_matrix_at_window,
 )
 
 
@@ -43,7 +48,7 @@ def _matrices_by_chunk(bundle: TOMSMultiRegressorBundle, n_chunks: int, base_wi:
     out = {}
     for j in range(n_chunks):
         wi = base_wi + j
-        out[j] = score_matrix_at_t(bundle, bundle.window_t[wi])
+        out[j] = score_matrix_at_window(bundle, wi)
     return out
 
 
@@ -90,16 +95,10 @@ def _analyze_test_chunks_parallel(test_set_dict, analyze_test, senti_model, clas
 def _time_column_to_X(time_series):
     """
     Parse time column to numeric **days** (Unix epoch in days, not seconds).
-    Supports full datetimes and legacy Covid 'MM-DD' strings.
+    Uses the same rules as TOMS (ISO YYYY-MM-DD + legacy MM-DD, etc.).
     """
     s = time_series if isinstance(time_series, pd.Series) else pd.Series(time_series)
-    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
-    if t.isna().any():
-        mmdd = s.astype(str).str.strip() + "-2000"
-        t_fallback = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
-        t = t.where(~t.isna(), t_fallback)
-    if t.isna().any():
-        raise ValueError("Time column contains invalid or missing datetimes after parsing.")
+    t = _parse_time_series(s)
     ns = t.astype("int64").to_numpy(dtype=np.float64)
     return (ns / (86400.0 * 1e9)).reshape(-1, 1)
 
@@ -109,10 +108,7 @@ def _window_day_label(df: pd.DataFrame, time_column: str) -> str:
     if time_column not in df.columns or len(df) == 0:
         return "?"
     s = df[time_column]
-    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
-    if t.isna().all():
-        mmdd = s.astype(str).str.strip() + "-2000"
-        t = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
+    t = _parse_time_series(s)
     if t.notna().any():
         med = t.median()
         try:
@@ -127,10 +123,7 @@ def date_span_label(df: pd.DataFrame, time_column: str) -> str:
     if time_column not in df.columns or len(df) == 0:
         return ""
     s = df[time_column]
-    t = pd.to_datetime(s, errors="coerce", dayfirst=True)
-    if t.isna().all():
-        mmdd = s.astype(str).str.strip() + "-2000"
-        t = pd.to_datetime(mmdd, format="%m-%d-%Y", errors="coerce")
+    t = _parse_time_series(s)
     if t.notna().any():
         try:
             return f"{t.min().date()} to {t.max().date()}"
@@ -228,7 +221,7 @@ def write_regressor_window_scores_table(
 ):
     """One CSV row per window: metadata + mean regressor probability per class (legacy single model)."""
     rows = []
-    for wi in sorted(ts_chunks.keys()):
+    for wi in _sorted_window_keys(ts_chunks):
         df = ts_chunks[wi]
         if time_column not in df.columns:
             raise KeyError(
@@ -267,9 +260,14 @@ def write_classifier_window_scores_table(
     out_path,
     time_column: str = None,
 ):
-    """One CSV row per window: mean HuggingFace classifier score per class (per chunk)."""
+    """One CSV row per window: classifier softmax per class (no sample mean)."""
+    window_t = (
+        scalar_time_per_window(ts_chunks, time_column)
+        if time_column
+        else None
+    )
     rows = []
-    for wi in sorted(ts_chunks.keys()):
+    for wi in _sorted_window_keys(ts_chunks):
         df = ts_chunks[wi]
         day = _window_day_label(df, time_column) if time_column else f"win{wi}"
         split = "val" if wi < val_length else "test"
@@ -279,14 +277,20 @@ def write_classifier_window_scores_table(
             classes,
             hf_context=f"w{wi} {split} day≈{day}",
         )
-        mean_scores = pred_scores[[cl for cl in classes]].mean(axis=0).to_numpy()
+        sub = pred_scores[[cl for cl in classes]]
+        if len(sub) == 0:
+            vec = np.zeros(len(classes), dtype=np.float64)
+        else:
+            # One score row per window: first chunk row (no mean aggregation).
+            vec = sub.iloc[0].to_numpy(dtype=np.float64)
         row = {
-            "window_index": wi,
+            "window_index": int(wi),
+            "t_window": float(window_t[wi]) if window_t is not None else np.nan,
             "split": split,
             "n_samples": int(len(df)),
         }
         for i, cl in enumerate(classes):
-            row[f"score_{cl}"] = float(mean_scores[i])
+            row[f"score_{cl}"] = float(vec[i])
         rows.append(row)
     out_df = pd.DataFrame(rows)
     path = Path(out_path)
@@ -961,3 +965,72 @@ def qtfied_dists(
             pd_quantified_dsts.to_csv(results_file)
 
     return quantified_dsts
+
+
+def write_true_window_prevalence_csv(
+    ts_prevalence: pd.DataFrame,
+    ts_chunks: dict,
+    classes,
+    val_length: int,
+    out_path: Path,
+    time_column: str | None = None,
+) -> None:
+    """
+    One row per window (chunk): true class prevalence aligned with ``ts_prevalence``.
+    Columns: window_index, t_window (chunk time median if ``time_column``), split, n_samples, true_prev_<cl>.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    window_t = (
+        scalar_time_per_window(ts_chunks, time_column)
+        if time_column
+        else None
+    )
+    rows = []
+    for wi in _sorted_window_keys(ts_chunks):
+        split = "val" if wi < val_length else "test"
+        row = {
+            "window_index": int(wi),
+            "t_window": float(window_t[wi]) if window_t is not None else np.nan,
+            "split": split,
+            "n_samples": int(len(ts_chunks[wi])),
+        }
+        for cl in classes:
+            row[f"true_prev_{cl}"] = float(ts_prevalence.loc[wi, cl])
+        rows.append(row)
+    pd.DataFrame(rows).to_csv(out_path, index=False)
+
+
+def write_quantified_prevalence_csv(
+    quantified_dsts,
+    classes,
+    val_length: int,
+    out_path: Path,
+    ts_chunks: dict | None = None,
+    time_column: str | None = None,
+) -> None:
+    """
+    Quantifier output: one row per test window.
+    ``window_index`` is the global chunk index (val_length, val_length+1, ...).
+    Columns: window_index, t_window (if ``ts_chunks`` and ``time_column``), split, quant_prev_<cl>.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    window_t = (
+        scalar_time_per_window(ts_chunks, time_column)
+        if (ts_chunks is not None and time_column)
+        else None
+    )
+    q = np.asarray(quantified_dsts, dtype=np.float64)
+    rows = []
+    for j in range(q.shape[0]):
+        wi = val_length + j
+        row = {
+            "window_index": int(wi),
+            "t_window": float(window_t[wi]) if window_t is not None else np.nan,
+            "split": "test",
+        }
+        for i, cl in enumerate(classes):
+            row[f"quant_prev_{cl}"] = float(q[j, i])
+        rows.append(row)
+    pd.DataFrame(rows).to_csv(out_path, index=False)
