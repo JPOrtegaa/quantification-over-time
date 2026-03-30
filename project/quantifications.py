@@ -354,6 +354,23 @@ def CC_on_TSsets(
     return qtfied_distribution
 
 
+def PCC_on_TSsets(
+    test_set_dict, senti_model, classes, analyze_fn=None, analyze_fn_test=None
+):
+    analyze_test = analyze_fn_test or analyze_fn or Classifying.analyzer
+    tests_y_ = _analyze_test_chunks_parallel(
+        test_set_dict, analyze_test, senti_model, classes, "scores"
+    )
+
+    qtfied_distribution = []
+    for j in range(len(test_set_dict)):
+        qua_prev = tests_y_[j].mean()[classes].to_numpy()
+        qtfied_distribution.append(qua_prev)
+
+    qtfied_distribution = np.array(qtfied_distribution)
+
+    return qtfied_distribution
+
 def getMAE_val_set(
     val_set,
     qua,
@@ -405,6 +422,8 @@ def getMAE_val_set(
         qtfd_dsts = EDy_on_TSsets(val_set, subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "CC":
         qtfd_dsts = CC_on_TSsets(subsamples_dict, mod, c, analyze_fn=analyze_fn)
+    elif qua == "PCC":
+        qtfd_dsts = PCC_on_TSsets(subsamples_dict, mod, c, analyze_fn=analyze_fn)
     elif qua == "ReadMe2":
         val_preds_path = (
             config.README_IMPLEMENT_DIR
@@ -507,6 +526,10 @@ def qtfied_dists(
             )
         elif qua == "CC":
             quantified_dsts = CC_on_TSsets(
+                data_dict, mod, c, analyze_fn=analyze_fn, analyze_fn_test=analyze_fn_test
+            )
+        elif qua == "PCC":
+            quantified_dsts = PCC_on_TSsets(
                 data_dict, mod, c, analyze_fn=analyze_fn, analyze_fn_test=analyze_fn_test
             )
         elif qua == "ReadMe2":

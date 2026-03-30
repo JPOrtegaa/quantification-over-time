@@ -34,7 +34,7 @@ tubular_data = [("bike", 55)]
 
 classifiers_set1 = ["LR", "RF"]
 classifiers_set2 = ["amansolanki/autonlp-Tweet-Sentiment-Extraction-20114061"]
-qua_methods = ["DyS", "ACC"] # "DyS-Opt"
+qua_methods = ["PCC"]  # TODO add EMQ
 TSA_methods = ["QFY"]
 unified_window = 4
 
@@ -173,7 +173,7 @@ def qot(data_format):
 
         seed_tables.append(outputfile)
 
-    tot = np.zeros((len(seed_tables), len(TSA_methods)))
+    tot = np.zeros((len(seed_tables[0]), len(TSA_methods)))
     for i in range(len(seeds)):
         res = seed_tables[i].to_numpy()[:, 3 : 3 + len(TSA_methods)]
         tot = tot + res
